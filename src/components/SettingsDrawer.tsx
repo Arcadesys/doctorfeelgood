@@ -21,6 +21,9 @@ interface SettingsDrawerProps {
   onPresetSelect: (preset: EMDRPreset) => void;
 }
 
+// Type for sub-menu tabs
+type ControlsSubTab = 'visual' | 'auditory' | 'kinesthetic';
+
 const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
   isOpen,
   onClose,
@@ -30,6 +33,7 @@ const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
   onPresetSelect,
 }) => {
   const [activeTab, setActiveTab] = useState<'controls' | 'presets'>('controls');
+  const [activeSubTab, setActiveSubTab] = useState<ControlsSubTab>('visual');
 
   // Drawer animation variants
   const drawerVariants = {
@@ -105,7 +109,7 @@ const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
               </button>
             </div>
             
-            {/* Tab navigation */}
+            {/* Main tab navigation */}
             <div className="flex border-b border-gray-200 dark:border-gray-700">
               <button
                 className={`flex-1 py-3 px-4 text-center transition-colors ${
@@ -137,152 +141,191 @@ const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
             <div className="p-4">
               {activeTab === 'controls' ? (
                 <div className="space-y-6">
-                  <div className="space-y-4">
-                    <h3 className="font-medium text-lg">Movement</h3>
-                    
-                    <div>
-                      <label htmlFor="speed" className="block mb-2 text-sm font-medium">
-                        Speed: <span className="text-sm font-mono bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded ml-2">{settings.speed}ms</span>
-                      </label>
-                      <input
-                        id="speed"
-                        type="range"
-                        min="500"
-                        max="3000"
-                        step="100"
-                        value={settings.speed}
-                        onChange={handleChange('speed')}
-                        className="w-full"
-                        aria-label="Adjust speed of target movement"
-                        disabled={isSessionActive}
-                      />
-                    </div>
+                  {/* Sub-tab navigation for Controls */}
+                  <div className="flex border-b border-gray-200 dark:border-gray-700 mb-4">
+                    <button
+                      className={`flex-1 py-2 px-2 text-center transition-colors text-sm ${
+                        activeSubTab === 'visual'
+                          ? 'border-b-2 border-green-500 font-medium text-green-600 dark:text-green-400'
+                          : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                      }`}
+                      onClick={() => setActiveSubTab('visual')}
+                      aria-selected={activeSubTab === 'visual'}
+                      role="tab"
+                    >
+                      Visual
+                    </button>
+                    <button
+                      className={`flex-1 py-2 px-2 text-center transition-colors text-sm ${
+                        activeSubTab === 'auditory'
+                          ? 'border-b-2 border-purple-500 font-medium text-purple-600 dark:text-purple-400'
+                          : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                      }`}
+                      onClick={() => setActiveSubTab('auditory')}
+                      aria-selected={activeSubTab === 'auditory'}
+                      role="tab"
+                    >
+                      Auditory
+                    </button>
+                    <button
+                      className={`flex-1 py-2 px-2 text-center transition-colors text-sm ${
+                        activeSubTab === 'kinesthetic'
+                          ? 'border-b-2 border-amber-500 font-medium text-amber-600 dark:text-amber-400'
+                          : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                      }`}
+                      onClick={() => setActiveSubTab('kinesthetic')}
+                      aria-selected={activeSubTab === 'kinesthetic'}
+                      role="tab"
+                    >
+                      Kinesthetic
+                    </button>
                   </div>
-                  
-                  <div className="space-y-4">
-                    <h3 className="font-medium text-lg">Visual</h3>
-                    
-                    <div>
-                      <label htmlFor="targetSize" className="block mb-2 text-sm font-medium">
-                        Target Size: <span className="text-sm font-mono bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded ml-2">{settings.targetSize}px</span>
-                      </label>
-                      <input
-                        id="targetSize"
-                        type="range"
-                        min="20"
-                        max="100"
-                        step="5"
-                        value={settings.targetSize}
-                        onChange={handleChange('targetSize')}
-                        className="w-full"
-                        aria-label="Adjust size of the visual target"
-                        disabled={isSessionActive}
-                      />
+
+                  {/* Visual Settings */}
+                  {activeSubTab === 'visual' && (
+                    <div className="space-y-4">
+                      <div>
+                        <label htmlFor="targetSize" className="block mb-2 text-sm font-medium">
+                          Target Size: <span className="text-sm font-mono bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded ml-2">{settings.targetSize}px</span>
+                        </label>
+                        <input
+                          id="targetSize"
+                          type="range"
+                          min="20"
+                          max="100"
+                          step="5"
+                          value={settings.targetSize}
+                          onChange={handleChange('targetSize')}
+                          className="w-full"
+                          aria-label="Adjust size of the visual target"
+                          disabled={isSessionActive}
+                        />
+                      </div>
+                      
+                      <div>
+                        <label htmlFor="visualIntensity" className="block mb-2 text-sm font-medium">
+                          Visual Intensity: <span className="text-sm font-mono bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded ml-2">{Math.round(settings.visualIntensity * 100)}%</span>
+                        </label>
+                        <input
+                          id="visualIntensity"
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.1"
+                          value={settings.visualIntensity}
+                          onChange={handleChange('visualIntensity')}
+                          className="w-full"
+                          aria-label="Adjust intensity of the visual target"
+                          disabled={isSessionActive}
+                        />
+                      </div>
                     </div>
-                    
-                    <div>
-                      <label htmlFor="visualIntensity" className="block mb-2 text-sm font-medium">
-                        Visual Intensity: <span className="text-sm font-mono bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded ml-2">{Math.round(settings.visualIntensity * 100)}%</span>
-                      </label>
-                      <input
-                        id="visualIntensity"
-                        type="range"
-                        min="0"
-                        max="1"
-                        step="0.1"
-                        value={settings.visualIntensity}
-                        onChange={handleChange('visualIntensity')}
-                        className="w-full"
-                        aria-label="Adjust intensity of the visual target"
-                        disabled={isSessionActive}
-                      />
+                  )}
+
+                  {/* Auditory Settings */}
+                  {activeSubTab === 'auditory' && (
+                    <div className="space-y-4">
+                      <div>
+                        <label htmlFor="oscillatorType" className="block mb-2 text-sm font-medium">
+                          Tone Type:
+                        </label>
+                        <select
+                          id="oscillatorType"
+                          value={settings.oscillatorType}
+                          onChange={handleChange('oscillatorType')}
+                          className="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2"
+                          disabled={isSessionActive}
+                          aria-label="Select oscillator type"
+                        >
+                          <option value="sine">Sine (Smooth)</option>
+                          <option value="square">Square (Sharp)</option>
+                          <option value="triangle">Triangle (Medium)</option>
+                          <option value="sawtooth">Sawtooth (Buzzy)</option>
+                        </select>
+                      </div>
+                      
+                      <div>
+                        <label htmlFor="freqLeft" className="block mb-2 text-sm font-medium">
+                          Left Tone: <span className="text-sm font-mono bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded ml-2">{settings.freqLeft}Hz</span>
+                        </label>
+                        <input
+                          id="freqLeft"
+                          type="range"
+                          min="220"
+                          max="880"
+                          step="20"
+                          value={settings.freqLeft}
+                          onChange={handleChange('freqLeft')}
+                          className="w-full"
+                          aria-label="Adjust frequency of left tone"
+                          disabled={isSessionActive}
+                        />
+                      </div>
+                      
+                      <div>
+                        <label htmlFor="freqRight" className="block mb-2 text-sm font-medium">
+                          Right Tone: <span className="text-sm font-mono bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded ml-2">{settings.freqRight}Hz</span>
+                        </label>
+                        <input
+                          id="freqRight"
+                          type="range"
+                          min="220"
+                          max="880"
+                          step="20"
+                          value={settings.freqRight}
+                          onChange={handleChange('freqRight')}
+                          className="w-full"
+                          aria-label="Adjust frequency of right tone"
+                          disabled={isSessionActive}
+                        />
+                      </div>
                     </div>
-                  </div>
-                  
-                  <div className="space-y-4">
-                    <h3 className="font-medium text-lg">Audio</h3>
-                    
-                    <div>
-                      <label htmlFor="oscillatorType" className="block mb-2 text-sm font-medium">
-                        Tone Type:
-                      </label>
-                      <select
-                        id="oscillatorType"
-                        value={settings.oscillatorType}
-                        onChange={handleChange('oscillatorType')}
-                        className="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2"
-                        disabled={isSessionActive}
-                        aria-label="Select oscillator type"
-                      >
-                        <option value="sine">Sine (Smooth)</option>
-                        <option value="square">Square (Sharp)</option>
-                        <option value="triangle">Triangle (Medium)</option>
-                        <option value="sawtooth">Sawtooth (Buzzy)</option>
-                      </select>
+                  )}
+
+                  {/* Kinesthetic Settings */}
+                  {activeSubTab === 'kinesthetic' && (
+                    <div className="space-y-4">
+                      <div>
+                        <label htmlFor="speed" className="block mb-2 text-sm font-medium">
+                          Speed: <span className="text-sm font-mono bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded ml-2">{settings.speed}ms</span>
+                        </label>
+                        <input
+                          id="speed"
+                          type="range"
+                          min="500"
+                          max="3000"
+                          step="100"
+                          value={settings.speed}
+                          onChange={handleChange('speed')}
+                          className="w-full"
+                          aria-label="Adjust speed of target movement"
+                          disabled={isSessionActive}
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="sessionDuration" className="block mb-2 text-sm font-medium">
+                          Session Duration:
+                        </label>
+                        <select
+                          id="sessionDuration"
+                          value={settings.sessionDuration}
+                          onChange={handleChange('sessionDuration')}
+                          className="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2"
+                          disabled={isSessionActive}
+                          aria-label="Session duration in minutes"
+                        >
+                          <option value="1">1 minute</option>
+                          <option value="3">3 minutes</option>
+                          <option value="5">5 minutes</option>
+                          <option value="10">10 minutes</option>
+                          <option value="15">15 minutes</option>
+                          <option value="20">20 minutes</option>
+                          <option value="30">30 minutes</option>
+                        </select>
+                      </div>
                     </div>
-                    
-                    <div>
-                      <label htmlFor="freqLeft" className="block mb-2 text-sm font-medium">
-                        Left Tone: <span className="text-sm font-mono bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded ml-2">{settings.freqLeft}Hz</span>
-                      </label>
-                      <input
-                        id="freqLeft"
-                        type="range"
-                        min="220"
-                        max="880"
-                        step="20"
-                        value={settings.freqLeft}
-                        onChange={handleChange('freqLeft')}
-                        className="w-full"
-                        aria-label="Adjust frequency of left tone"
-                        disabled={isSessionActive}
-                      />
-                    </div>
-                    
-                    <div>
-                      <label htmlFor="freqRight" className="block mb-2 text-sm font-medium">
-                        Right Tone: <span className="text-sm font-mono bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded ml-2">{settings.freqRight}Hz</span>
-                      </label>
-                      <input
-                        id="freqRight"
-                        type="range"
-                        min="220"
-                        max="880"
-                        step="20"
-                        value={settings.freqRight}
-                        onChange={handleChange('freqRight')}
-                        className="w-full"
-                        aria-label="Adjust frequency of right tone"
-                        disabled={isSessionActive}
-                      />
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-4">
-                    <h3 className="font-medium text-lg">Session</h3>
-                    
-                    <div>
-                      <label htmlFor="sessionDuration" className="block mb-2 text-sm font-medium">
-                        Session Duration:
-                      </label>
-                      <select
-                        id="sessionDuration"
-                        value={settings.sessionDuration}
-                        onChange={handleChange('sessionDuration')}
-                        className="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2"
-                        disabled={isSessionActive}
-                        aria-label="Session duration in minutes"
-                      >
-                        <option value="1">1 minute</option>
-                        <option value="3">3 minutes</option>
-                        <option value="5">5 minutes</option>
-                        <option value="10">10 minutes</option>
-                        <option value="15">15 minutes</option>
-                        <option value="20">20 minutes</option>
-                        <option value="30">30 minutes</option>
-                      </select>
-                    </div>
-                  </div>
+                  )}
                 </div>
               ) : (
                 <PresetManager

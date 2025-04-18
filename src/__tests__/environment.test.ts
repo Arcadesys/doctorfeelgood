@@ -86,18 +86,18 @@ describe('Environment Configuration', () => {
     let audioPath = '';
     
     if (process.env.NODE_ENV === 'development') {
-      audioPath = '/Outer Wilds.m4a';
+      audioPath = '/audio/sine-440hz.mp3';
     } else {
       audioPath = '/sounds/menu-open.mp3';
     }
     
-    expect(audioPath).toBe('/Outer Wilds.m4a');
+    expect(audioPath).toBe('/audio/sine-440hz.mp3');
     
     // Test production mode
     process.env.NODE_ENV = 'production';
     
     if (process.env.NODE_ENV === 'development') {
-      audioPath = '/Outer Wilds.m4a';
+      audioPath = '/audio/sine-440hz.mp3';
     } else {
       audioPath = '/sounds/menu-open.mp3';
     }

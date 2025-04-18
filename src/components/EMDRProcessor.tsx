@@ -18,6 +18,7 @@ export function EMDRProcessor() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [folderPath, setFolderPath] = useState<string>('');
   const [a11yMessage, setA11yMessage] = useState<string>('Visual target ready. Audio controls available at bottom of screen.');
+  const [isDarkMode, setIsDarkMode] = useState(true);
   
   // Animation state
   const [animationFrameId, setAnimationFrameId] = useState<number | null>(null);
@@ -32,17 +33,28 @@ export function EMDRProcessor() {
   
   // Load audio metadata on mount
   useEffect(() => {
+    // Check for saved theme preference
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'light') {
+      setIsDarkMode(false);
+      document.documentElement.classList.remove('dark');
+    } else {
+      // Default to dark mode
+      setIsDarkMode(true);
+      document.documentElement.classList.add('dark');
+    }
+
     // Check if we're in development mode and create an entry for the Outer Wilds file
     if (process.env.NODE_ENV === 'development') {
-      console.log('Development mode detected, setting up Outer Wilds.m4a');
+      console.log('Development mode detected, setting up audio file');
       
       const defaultFiles = [
         { 
           id: '1', 
-          name: 'Outer Wilds.m4a', 
+          name: 'Sine Wave 440Hz', 
           lastUsed: new Date().toLocaleString(), 
-          // File is in the root directory
-          path: '/Outer Wilds.m4a'
+          // File is in the audio directory
+          path: '/audio/sine-440hz.mp3'
         }
       ];
       setAudioFiles(defaultFiles);
@@ -52,16 +64,23 @@ export function EMDRProcessor() {
       
       // Set up the audio source but don't autoplay
       if (audioPlayerRef.current) {
-        console.log('Setting audio source to Outer Wilds.m4a');
+        console.log('Setting audio source to sine-440hz.mp3');
         
         // Add event listeners to track loading process
         audioPlayerRef.current.onloadstart = () => console.log('Audio loading started');
         audioPlayerRef.current.onloadeddata = () => console.log('Audio data loaded');
         audioPlayerRef.current.oncanplay = () => console.log('Audio can play');
-        audioPlayerRef.current.onerror = (e) => console.error('Audio loading error:', audioPlayerRef.current?.error);
+        audioPlayerRef.current.onerror = (e) => {
+          const error = audioPlayerRef.current?.error;
+          console.error('Audio loading error:', {
+            code: error?.code,
+            message: error?.message,
+            details: error
+          });
+        };
         
         // Use absolute path to the file in the public directory
-        audioPlayerRef.current.src = '/Outer Wilds.m4a';
+        audioPlayerRef.current.src = '/audio/sine-440hz.mp3';
         audioPlayerRef.current.load();
       }
       
@@ -77,7 +96,7 @@ export function EMDRProcessor() {
     } else {
       // Default sample files
       const defaultFiles = [
-        { id: '1', name: 'Outer Wilds.m4a', lastUsed: '4/18/2025 08:58 AM', path: '/music/Outer Wilds.m4a' }
+        { id: '1', name: 'Sine Wave 440Hz', lastUsed: '4/18/2023 08:58 AM', path: '/audio/sine-440hz.mp3' }
       ];
       setAudioFiles(defaultFiles);
       localStorage.setItem('audioFilesMeta', JSON.stringify(defaultFiles));
@@ -123,11 +142,11 @@ export function EMDRProcessor() {
       // Draw static ball in the center
       ctx.beginPath();
       ctx.arc(window.innerWidth / 2, window.innerHeight / 2, 20, 0, Math.PI * 2);
-      ctx.fillStyle = '#6b7280'; // Gray
+      ctx.fillStyle = isDarkMode ? '#6b7280' : '#374151'; // Gray for dark mode, darker gray for light mode
       ctx.fill();
       ctx.closePath();
     }
-  }, [isPlaying]);
+  }, [isPlaying, isDarkMode]);
   
   // Setup canvas and handle resize
   useEffect(() => {
@@ -195,7 +214,7 @@ export function EMDRProcessor() {
         // Draw ball
         ctx.beginPath();
         ctx.arc(x, window.innerHeight / 2, ballRadius, 0, Math.PI * 2);
-        ctx.fillStyle = '#3b82f6'; // Blue
+        ctx.fillStyle = isDarkMode ? '#3b82f6' : '#1d4ed8'; // Blue for dark mode, darker blue for light mode
         ctx.fill();
         ctx.closePath();
         
@@ -230,7 +249,7 @@ export function EMDRProcessor() {
         animationIdRef.current = null;
       }
     };
-  }, [isPlaying]);
+  }, [isPlaying, isDarkMode]);
   
   // Handle menu open/close with sound effects
   const toggleMenu = () => {
@@ -288,23 +307,43 @@ export function EMDRProcessor() {
   const selectAudioFile = (file: AudioFile) => {
     setSelectedAudio(file);
     
-    // Play the audio file
-    if (audioPlayerRef.current) {
-      if (process.env.NODE_ENV === 'development' && file.name === 'Outer Wilds.m4a') {
-        // In development, use the actual file from the public directory
-        console.log('Selecting Outer Wilds.m4a for playback');
-        
-        // Add event listeners for debugging
+    // Update lastUsed date
+    const updatedFiles = audioFiles.map(f => {
+      if (f.id === file.id) {
+        return { ...f, lastUsed: new Date().toLocaleString() };
+      }
+      return f;
+    });
+    
+    setAudioFiles(updatedFiles);
+    
+    // If in development mode using our default file, use the direct path
+    if (process.env.NODE_ENV === 'development' && file.name === 'Sine Wave 440Hz') {
+      // To ensure audio reloads when selected repeatedly
+      if (audioPlayerRef.current) {
+        console.log('Selecting Sine Wave 440Hz for playback');
+        audioPlayerRef.current.pause();
         audioPlayerRef.current.onloadstart = () => console.log('Audio loading started');
         audioPlayerRef.current.onloadeddata = () => console.log('Audio data loaded');
         audioPlayerRef.current.oncanplay = () => console.log('Audio can play');
-        audioPlayerRef.current.onerror = (e) => console.error('Audio loading error:', audioPlayerRef.current?.error);
-        
-        audioPlayerRef.current.src = '/Outer Wilds.m4a';
-      } else {
-        // For non-development or other files, use the placeholder
-        audioPlayerRef.current.src = '/sounds/menu-open.mp3'; 
+        audioPlayerRef.current.onerror = (e) => {
+          const error = audioPlayerRef.current?.error;
+          console.error('Audio loading error:', {
+            code: error?.code,
+            message: error?.message,
+            details: error
+          });
+        };
+        audioPlayerRef.current.src = '/audio/sine-440hz.mp3';
+        audioPlayerRef.current.load();
       }
+      return;
+    }
+    
+    // Play the audio file
+    if (audioPlayerRef.current) {
+      // For all files, use the placeholder if not in development with default file
+      audioPlayerRef.current.src = '/sounds/menu-open.mp3'; 
       
       console.log(`Playing audio: ${audioPlayerRef.current.src}`);
       audioPlayerRef.current.play()
@@ -320,16 +359,6 @@ export function EMDRProcessor() {
           }
         });
     }
-    
-    // Update last used timestamp
-    const now = new Date();
-    const formattedDate = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()} ${now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
-    
-    const updatedFiles = audioFiles.map(f => 
-      f.id === file.id ? {...f, lastUsed: formattedDate} : f
-    );
-    
-    setAudioFiles(updatedFiles);
   };
   
   // Handle audio playback controls
@@ -386,8 +415,39 @@ export function EMDRProcessor() {
     return hash.toString(16);
   };
 
+  // Toggle between dark and light mode
+  const toggleTheme = () => {
+    const newDarkMode = !isDarkMode;
+    setIsDarkMode(newDarkMode);
+    
+    if (newDarkMode) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+      // Play a deeper tone for dark mode
+      const oscillator = new AudioContext().createOscillator();
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(220, 0);
+      oscillator.connect(new AudioContext().destination);
+      oscillator.start();
+      oscillator.stop(0.2);
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+      // Play a higher tone for light mode
+      const oscillator = new AudioContext().createOscillator();
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(440, 0);
+      oscillator.connect(new AudioContext().destination);
+      oscillator.start();
+      oscillator.stop(0.2);
+    }
+    
+    // Announce for screen readers
+    setA11yMessage(`${newDarkMode ? 'Dark' : 'Light'} mode activated`);
+  };
+
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-black p-4 relative">
+    <div className={`flex flex-col items-center justify-center min-h-screen ${isDarkMode ? 'bg-gray-900' : 'bg-white'} p-4 relative`}>
       {/* Audio elements for sound effects and playback */}
       <audio ref={menuOpenSoundRef} src="/sounds/menu-open.mp3" preload="auto" />
       <audio ref={menuCloseSoundRef} src="/sounds/menu-close.mp3" preload="auto" />
@@ -420,17 +480,60 @@ export function EMDRProcessor() {
       {/* Sliding Menu */}
       <div 
         ref={menuRef}
-        className={`fixed top-0 right-0 h-full bg-gray-900 w-80 p-6 shadow-lg z-10 transform transition-transform duration-300 ease-in-out ${isMenuOpen ? 'translate-x-0' : 'translate-x-full'} overflow-y-auto`}
+        className={`fixed top-0 right-0 h-full bg-gray-900 dark:bg-gray-900 bg-gray-100 w-80 p-6 shadow-lg z-10 transform transition-transform duration-300 ease-in-out ${isMenuOpen ? 'translate-x-0' : 'translate-x-full'} overflow-y-auto`}
         aria-hidden={!isMenuOpen}
       >
-        <h2 className="text-2xl font-bold mb-6 text-white">EMDR Settings</h2>
+        <h2 className="text-2xl font-bold mb-6 text-white dark:text-white text-gray-800">EMDR Settings</h2>
+        
+        {/* Display Mode Toggle */}
+        <div className="mb-6">
+          <h3 className="text-xl font-bold text-white dark:text-white text-gray-800 mb-4">Display Mode</h3>
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4 flex items-center justify-between">
+            <span className={`font-medium ${isDarkMode ? 'text-gray-500' : 'text-gray-900'} flex items-center`}>
+              {/* Sun icon */}
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <circle cx="12" cy="12" r="5" />
+                <line x1="12" y1="1" x2="12" y2="3" />
+                <line x1="12" y1="21" x2="12" y2="23" />
+                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+                <line x1="1" y1="12" x2="3" y2="12" />
+                <line x1="21" y1="12" x2="23" y2="12" />
+                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+              </svg>
+              Light
+            </span>
+            
+            {/* Toggle Switch */}
+            <button 
+              onClick={toggleTheme}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${isDarkMode ? 'bg-blue-600' : 'bg-gray-200'}`}
+              role="switch"
+              aria-checked={isDarkMode}
+              aria-label="Toggle dark mode"
+            >
+              <span 
+                className={`${isDarkMode ? 'translate-x-6' : 'translate-x-1'} inline-block h-4 w-4 transform rounded-full bg-white transition-transform`}
+              />
+            </button>
+            
+            <span className={`font-medium ${isDarkMode ? 'text-white' : 'text-gray-500'} flex items-center`}>
+              {/* Moon icon */}
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+              </svg>
+              Dark
+            </span>
+          </div>
+        </div>
         
         {/* Audio Selection Section */}
         <div className="mb-6">
-          <h3 className="text-xl font-bold text-white mb-4">Audio Selection</h3>
+          <h3 className="text-xl font-bold text-white dark:text-white text-gray-800 mb-4">Audio Selection</h3>
           
           {/* Upload Audio */}
-          <div className="bg-white rounded-lg p-4 mb-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
             <h4 className="font-bold mb-2">Upload Your Audio</h4>
             <input 
               type="file" 
@@ -450,7 +553,7 @@ export function EMDRProcessor() {
           </div>
           
           {/* Sample Audio */}
-          <div className="bg-white rounded-lg p-4 mb-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
             <h4 className="font-bold mb-2">Sample Audio</h4>
             <div className="grid grid-cols-2 gap-2">
               <button className="bg-gray-100 p-3 rounded text-sm text-left hover:bg-gray-200">
@@ -474,10 +577,10 @@ export function EMDRProcessor() {
         
         {/* Session Controls */}
         <div className="mb-6">
-          <h3 className="text-xl font-bold text-white mb-4">Session Controls</h3>
+          <h3 className="text-xl font-bold text-white dark:text-white text-gray-800 mb-4">Session Controls</h3>
           
           {/* Session Timing */}
-          <div className="bg-white rounded-lg p-4 mb-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
             <h4 className="font-bold mb-2">Session Timing</h4>
             
             <div className="mb-4">
@@ -516,7 +619,7 @@ export function EMDRProcessor() {
           </div>
           
           {/* Pan Settings */}
-          <div className="bg-white rounded-lg p-4 mb-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
             <h4 className="font-bold mb-2">Current Pan: 0.50 (Audio API: 0.00)</h4>
             <div className="flex items-center mb-1">
               <span className="text-xs">L</span>
@@ -532,7 +635,7 @@ export function EMDRProcessor() {
           </div>
           
           {/* Volume Control */}
-          <div className="bg-white rounded-lg p-4 mb-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
             <h4 className="font-bold mb-2">Volume: 70%</h4>
             <input 
               type="range" 
@@ -560,7 +663,7 @@ export function EMDRProcessor() {
       </div>
 
       {/* Main Content with Canvas */}
-      <h1 className="text-3xl font-bold mb-6 text-white">EMDR Therapy</h1>
+      <h1 className={`text-3xl font-bold mb-6 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>EMDR Therapy</h1>
       
       {/* Full viewport canvas for visual target */}
       <canvas 

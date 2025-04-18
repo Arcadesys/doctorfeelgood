@@ -70,7 +70,7 @@ describe('EMDRProcessor', () => {
     jest.clearAllMocks();
   });
   
-  test('In development mode, it loads Outer Wilds.m4a from public directory', async () => {
+  test('In development mode, it loads sine-440hz.mp3 from audio directory', async () => {
     // Set to development mode
     process.env.NODE_ENV = 'development';
     
@@ -80,7 +80,7 @@ describe('EMDRProcessor', () => {
     });
     
     // Check that dev-specific logs were called
-    expect(console.log).toHaveBeenCalledWith('Development mode detected, setting up Outer Wilds.m4a');
+    expect(console.log).toHaveBeenCalledWith('Development mode detected, setting up audio file');
     
     // Fast-forward timers to trigger the setTimeout
     await act(async () => {
@@ -88,7 +88,7 @@ describe('EMDRProcessor', () => {
     });
     
     // Check that it tried to load the development file
-    expect(console.log).toHaveBeenCalledWith('Setting audio source to Outer Wilds.m4a');
+    expect(console.log).toHaveBeenCalledWith('Setting audio source to sine-440hz.mp3');
   });
   
   test('In production mode, it doesnt attempt to load development files', async () => {
@@ -101,7 +101,7 @@ describe('EMDRProcessor', () => {
     });
     
     // Check that dev-specific logs were not called
-    expect(console.log).not.toHaveBeenCalledWith('Development mode detected, setting up Outer Wilds.m4a');
+    expect(console.log).not.toHaveBeenCalledWith('Development mode detected, setting up audio file');
     expect(console.log).toHaveBeenCalledWith('Production mode detected');
     
     // Fast-forward timers to ensure setTimeout would have been triggered
@@ -110,6 +110,6 @@ describe('EMDRProcessor', () => {
     });
     
     // Check that it didn't try to load the development file
-    expect(console.log).not.toHaveBeenCalledWith('Setting audio source to Outer Wilds.m4a');
+    expect(console.log).not.toHaveBeenCalledWith('Setting audio source to sine-440hz.mp3');
   });
 }); 

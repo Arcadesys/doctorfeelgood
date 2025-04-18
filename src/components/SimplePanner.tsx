@@ -13,10 +13,11 @@ export function SimplePanner() {
   const [audioUrl, setAudioUrl] = useState<string>('');
   const [audioTitle, setAudioTitle] = useState<string>('');
   const [isPlaying, setIsPlaying] = useState(false);
-  const [panValue, setPanValue] = useState(0); // -1 (left) to 1 (right)
+  const [panValue, setPanValue] = useState(1); // Start at right (1)
   const [volume, setVolume] = useState(0.7); // 0 to 1
   const [oscillationEnabled, setOscillationEnabled] = useState(true);
   const [oscillationSpeed, setOscillationSpeed] = useState(0.01);
+  const [rightToCenter, setRightToCenter] = useState(true); // True = 1 to 0, False = -1 to 0
   
   // References for the audio elements
   const audioElement = useRef<HTMLAudioElement | null>(null);
@@ -169,29 +170,29 @@ export function SimplePanner() {
   useEffect(() => {
     if (!isPlaying || !oscillationEnabled) return;
     
-    // Create oscillation between left and right
-    let direction = 1; // 1 = right, -1 = left
+    // Create oscillation between right and center
+    let direction = rightToCenter ? -1 : 1; // -1 = towards center, 1 = towards right
     let currentPosition = panValue;
     
     const interval = setInterval(() => {
       // Move the pan position
       currentPosition += oscillationSpeed * direction;
       
-      // Reverse direction if we hit the edges
+      // Reverse direction if we hit the boundaries
       if (currentPosition >= 1) {
         currentPosition = 1;
-        direction = -1;
-      } else if (currentPosition <= -1) {
-        currentPosition = -1;
-        direction = 1;
+        direction = -1; // Start moving toward center
+      } else if (currentPosition <= 0) {
+        currentPosition = 0;
+        direction = 1; // Start moving toward right
       }
       
       // Update the pan value state
       setPanValue(currentPosition);
-    }, 30); // Update every 30ms for smooth movement
+    }, 20); // 20ms for smoother transitions
     
     return () => clearInterval(interval);
-  }, [isPlaying, panValue, oscillationEnabled, oscillationSpeed]);
+  }, [isPlaying, panValue, oscillationEnabled, oscillationSpeed, rightToCenter]);
   
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-4">
@@ -266,12 +267,12 @@ export function SimplePanner() {
         {/* Pan control */}
         <div className="mb-4">
           <label htmlFor="panControl" className="block text-sm font-medium text-gray-700 mb-2">
-            Pan: {panValue.toFixed(2)} ({panValue < 0 ? 'Left' : panValue > 0 ? 'Right' : 'Center'})
+            Pan: {panValue.toFixed(2)} ({panValue === 0 ? 'Center' : panValue === 1 ? 'Right' : 'Between'})
           </label>
           <input
             id="panControl"
             type="range"
-            min="-1"
+            min="0"
             max="1"
             step="0.01"
             value={panValue}
@@ -308,7 +309,7 @@ export function SimplePanner() {
               className="mr-2 h-4 w-4"
             />
             <label htmlFor="oscillation" className="text-sm font-medium text-gray-700">
-              Enable automatic panning
+              Enable automatic right-to-center panning
             </label>
           </div>
           
@@ -339,7 +340,7 @@ export function SimplePanner() {
             className={`h-full ${isPlaying ? 'bg-green-500' : 'bg-gray-400'}`}
             style={{ 
               width: '10px', 
-              marginLeft: `${((panValue + 1) / 2) * 100}%`, // Map -1...1 to 0%...100%
+              marginLeft: `${panValue * 100}%`, // Map 0...1 to 0%...100%
               transition: 'margin-left 0.1s ease-out'
             }}
           />
@@ -349,13 +350,13 @@ export function SimplePanner() {
       {/* Status text */}
       <div className="mt-2 text-sm text-gray-500">
         {isPlaying ? 'Playing' : 'Stopped'} - 
-        Pan position: {panValue.toFixed(2)} ({panValue < 0 ? 'Left' : panValue > 0 ? 'Right' : 'Center'})
+        Pan position: {panValue.toFixed(2)} ({panValue === 0 ? 'Center' : panValue === 1 ? 'Right' : 'Between'})
       </div>
       
       {/* Accessibility info */}
       <div className="sr-only" aria-live="polite">
         {isPlaying ? 'Audio is playing' : 'Audio is stopped'}. 
-        Pan position: {panValue < 0 ? 'Left' : panValue > 0 ? 'Right' : 'Center'}.
+        Pan position: {panValue.toFixed(2)} ({panValue === 0 ? 'Center' : panValue === 1 ? 'Right' : 'Between center and right'}).
       </div>
     </div>
   );

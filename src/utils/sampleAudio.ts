@@ -1,45 +1,44 @@
-// Collection of properly licensed royalty-free audio samples 
-// All sounds are either CC0 (public domain) or explicitly noted with attribution
+// Collection of local audio samples in the public directory
 export const sampleAudioFiles = [
   {
     id: 'whitenoise',
     title: 'White Noise',
-    url: 'https://cdn.freesound.org/previews/133/133099_1197050-lq.mp3',
-    description: 'White noise for focus and relaxation - CC0',
+    url: '/audio/white-noise.mp3',
+    description: 'White noise for focus and relaxation',
     license: 'CC0',
-    attribution: 'From Freesound.org by unfa (CC0)'
+    attribution: 'Generated with Web Audio API (CC0)'
   },
   {
-    id: 'meditation',
-    title: 'Meditation Bell',
-    url: 'https://cdn.freesound.org/previews/414/414360_594771-lq.mp3',
-    description: 'Soft meditation bell tones - CC0',
+    id: 'sinewave440',
+    title: 'Sine Wave 440Hz',
+    url: '/audio/sine-440hz.mp3',
+    description: 'Clean 440Hz sine wave tone',
     license: 'CC0',
-    attribution: 'From Freesound.org by thedapperdan (CC0)'
+    attribution: 'Generated with Web Audio API (CC0)'
   },
   {
-    id: 'piano',
-    title: 'Piano Notes',
-    url: 'https://cdn.freesound.org/previews/634/634893_11861866-lq.mp3',
-    description: 'Gentle piano notes for relaxation - CC0',
+    id: 'sinewave220',
+    title: 'Sine Wave 220Hz',
+    url: '/audio/sine-220hz.mp3',
+    description: 'Deeper 220Hz sine wave tone',
     license: 'CC0',
-    attribution: 'From Freesound.org by SergeQuadrado (CC0)'
+    attribution: 'Generated with Web Audio API (CC0)'
   },
   {
-    id: 'waves',
-    title: 'Ocean Waves',
-    url: 'https://cdn.freesound.org/previews/617/617306_5674468-lq.mp3',
-    description: 'Calming ocean waves on the shore - CC0',
+    id: 'triangle',
+    title: 'Triangle Wave',
+    url: '/audio/triangle-wave.mp3',
+    description: 'Soft triangle wave for gentle stimulation',
     license: 'CC0',
-    attribution: 'From Freesound.org by Anthousai (CC0)'
+    attribution: 'Generated with Web Audio API (CC0)'
   },
   {
-    id: 'sinewave',
-    title: 'Pure Tone',
-    url: 'https://cdn.freesound.org/previews/131/131565_2398403-lq.mp3',
-    description: 'Clean 440Hz tone for focus and alignment - CC0',
+    id: 'pinknoise',
+    title: 'Pink Noise',
+    url: '/audio/pink-noise.mp3',
+    description: 'Gentle pink noise for relaxation',
     license: 'CC0',
-    attribution: 'From Freesound.org by Timbre (CC0)'
+    attribution: 'Generated with Web Audio API (CC0)'
   }
 ];
 

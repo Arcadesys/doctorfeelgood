@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Generator</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        button {
+            padding: 10px 15px;
+            margin: 10px 5px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button.primary {
+            background-color: #2196F3;
+            font-weight: bold;
+        }
+        button.primary:hover {
+            background-color: #0b7dda;
+        }
+        h1, h2 {
+            color: #333;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .audio-group {
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 8px;
+        }
+        .audio-group.primary {
+            border: 2px solid #2196F3;
+            background-color: #f0f8ff;
+        }
+        .log {
+            background-color: #f8f8f8;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-top: 20px;
+            height: 200px;
+            overflow-y: auto;
+        }
+        .note {
+            background-color: #fffde7;
+            border-left: 4px solid #ffd600;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        .warning {
+            background-color: #ffebee;
+            border-left: 4px solid #f44336;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Audio Generator for Doctor Feel Good</h1>
+    
+    <div class="warning">
+        <h3>⚠️ Important: Audio Format Requirements</h3>
+        <p>The EMDR therapy component requires <strong>continuous, looping tones</strong> without breaks.</p>
+        <p>This generator now creates:</p>
+        <ul>
+            <li>30-second continuous audio files (instead of 5 seconds)</li>
+            <li>Files designed for seamless looping (no clicks/pops when repeating)</li>
+            <li>Consistent volume levels for therapeutic use</li>
+        </ul>
+    </div>
+    
+    <div class="note">
+        <h3>📝 Audio File Requirements</h3>
+        <p>The app requires two main audio files:</p>
+        <ul>
+            <li><strong>Sine Wave 440Hz</strong> - Continuous tone for EMDR therapy</li>
+            <li><strong>Pink Noise</strong> - Gentle noise for relaxation and focus</li>
+        </ul>
+        <p>These files are highlighted below with a blue border. Generate these first!</p>
+    </div>
+    
+    <p>This tool generates audio files for the SimplePanner and EMDRProcessor components. Click on the buttons below to generate and download audio files.</p>
+    
+    <div class="container">
+        <div class="audio-group primary">
+            <h2>Sine Wave 440Hz (REQUIRED)</h2>
+            <button class="primary" onclick="generateSineWave(440)">Generate 440Hz Sine Wave</button>
+            <audio id="sine-440hz-player" controls loop></audio>
+            <p class="text-sm text-gray-600 mt-2">Test looping: Enable loop in your audio player to verify seamless playback</p>
+        </div>
+        
+        <div class="audio-group primary">
+            <h2>Pink Noise (REQUIRED)</h2>
+            <button class="primary" onclick="generatePinkNoise()">Generate Pink Noise</button>
+            <audio id="pink-noise-player" controls loop></audio>
+            <p class="text-sm text-gray-600 mt-2">Test looping: Enable loop in your audio player to verify seamless playback</p>
+        </div>
+        
+        <div class="audio-group">
+            <h2>White Noise (OPTIONAL)</h2>
+            <button onclick="generateWhiteNoise()">Generate White Noise</button>
+            <audio id="white-noise-player" controls loop></audio>
+        </div>
+        
+        <div class="audio-group">
+            <h2>Sine Wave 220Hz (OPTIONAL)</h2>
+            <button onclick="generateSineWave(220)">Generate 220Hz Sine Wave</button>
+            <audio id="sine-220hz-player" controls loop></audio>
+        </div>
+        
+        <div class="audio-group">
+            <h2>Triangle Wave (OPTIONAL)</h2>
+            <button onclick="generateTriangleWave()">Generate Triangle Wave</button>
+            <audio id="triangle-wave-player" controls loop></audio>
+        </div>
+        
+        <div class="audio-group">
+            <h2>Download All</h2>
+            <button onclick="generateAll()">Generate & Download All</button>
+        </div>
+    </div>
+    
+    <div class="log" id="log"></div>
+    
+    <script>
+        // Log function
+        function log(message) {
+            const logElement = document.getElementById('log');
+            logElement.innerHTML += `<div>${message}</div>`;
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+        
+        // Audio context
+        let audioContext;
+        
+        function initAudioContext() {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                log('Audio context initialized');
+            }
+            return audioContext;
+        }
+        
+        // Generate and download functions
+        async function generateAndDownload(audioBuffer, filename) {
+            // Convert AudioBuffer to WAV
+            const wavBlob = await audioBufferToWav(audioBuffer);
+            
+            // Create download link
+            const url = URL.createObjectURL(wavBlob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            
+            // Clean up
+            setTimeout(() => {
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }, 100);
+            
+            log(`Generated and downloaded ${filename}`);
+            
+            // Update audio player
+            const playerId = filename.replace('.mp3', '-player').replace('.wav', '-player');
+            const player = document.getElementById(playerId);
+            if (player) {
+                player.src = url;
+                player.loop = true; // Enable looping by default for testing
+            }
+            
+            return url;
+        }
+        
+        // White noise generator
+        async function generateWhiteNoise() {
+            const context = initAudioContext();
+            const duration = 30; // seconds (increased from 5 to 30)
+            const sampleRate = context.sampleRate;
+            const numChannels = 2;
+            const numFrames = sampleRate * duration;
+            const audioBuffer = context.createBuffer(numChannels, numFrames, sampleRate);
+            
+            // Fill with white noise
+            for (let channel = 0; channel < numChannels; channel++) {
+                const channelData = audioBuffer.getChannelData(channel);
+                
+                // Generate main noise content
+                for (let i = 0; i < numFrames; i++) {
+                    // White noise is random samples between -1.0 and 1.0
+                    // We reduce amplitude to 0.1 to avoid clipping
+                    channelData[i] = (Math.random() * 2 - 1) * 0.1;
+                }
+                
+                // Create a smooth crossfade at the loop point (last 0.1 seconds fade to first 0.1 seconds)
+                // This creates a seamless loop by avoiding clicks/pops
+                const fadeFrames = Math.floor(sampleRate * 0.1);
+                for (let i = 0; i < fadeFrames; i++) {
+                    const fadeOutPos = numFrames - fadeFrames + i;
+                    const fadeInPos = i;
+                    const ratio = i / fadeFrames;
+                    
+                    // Crossfade between end and beginning
+                    channelData[fadeOutPos] = channelData[fadeOutPos] * (1 - ratio) + channelData[fadeInPos] * ratio;
+                }
+            }
+            
+            log('Generated loopable white noise (30 seconds)');
+            await generateAndDownload(audioBuffer, 'white-noise.mp3');
+        }
+        
+        // Pink noise generator
+        async function generatePinkNoise() {
+            const context = initAudioContext();
+            const duration = 30; // seconds (increased from 5 to 30)
+            const sampleRate = context.sampleRate;
+            const numChannels = 2;
+            const numFrames = sampleRate * duration;
+            const audioBuffer = context.createBuffer(numChannels, numFrames, sampleRate);
+            
+            // Pink noise parameters (approximation using biquad filters)
+            const b0 = 0.99765;
+            const b1 = 0.0990460;
+            const b2 = 0.96300;
+            
+            // Fill with pink noise
+            for (let channel = 0; channel < numChannels; channel++) {
+                const channelData = audioBuffer.getChannelData(channel);
+                let white, pink = 0;
+                
+                // Generate initial seed values to ensure loop continuity
+                // Store initial state for later use at loop point
+                const initialState = [];
+                for (let i = 0; i < 10; i++) {
+                    white = Math.random() * 2 - 1;
+                    pink = b0 * white + b1 * pink;
+                    initialState.push({ white, pink });
+                }
+                
+                // Generate main content
+                for (let i = 0; i < numFrames; i++) {
+                    white = Math.random() * 2 - 1;
+                    // Pink noise approximation
+                    pink = b0 * white + b1 * pink;
+                    // Reduce amplitude to avoid clipping
+                    channelData[i] = pink * 0.1;
+                }
+                
+                // Create a smooth transition at loop point
+                const fadeFrames = Math.floor(sampleRate * 0.1);
+                for (let i = 0; i < fadeFrames; i++) {
+                    const fadeOutPos = numFrames - fadeFrames + i;
+                    const fadeInPos = i;
+                    const ratio = i / fadeFrames;
+                    
+                    // Crossfade between end and beginning
+                    channelData[fadeOutPos] = channelData[fadeOutPos] * (1 - ratio) + channelData[fadeInPos] * ratio;
+                }
+            }
+            
+            log('Generated loopable pink noise (30 seconds)');
+            await generateAndDownload(audioBuffer, 'pink-noise.mp3');
+        }
+        
+        // Sine wave generator
+        async function generateSineWave(frequency) {
+            const context = initAudioContext();
+            const duration = 30; // seconds (increased from 5 to 30)
+            const sampleRate = context.sampleRate;
+            const numChannels = 2;
+            const numFrames = sampleRate * duration;
+            const audioBuffer = context.createBuffer(numChannels, numFrames, sampleRate);
+            
+            // Calculate exact number of cycles to ensure perfect looping
+            // For a sine wave to loop perfectly, the duration must contain a whole number of cycles
+            const cycleDuration = 1 / frequency; // seconds per cycle
+            const totalCycles = Math.floor(duration / cycleDuration);
+            const perfectDuration = totalCycles * cycleDuration;
+            
+            // Fill with sine wave
+            for (let channel = 0; channel < numChannels; channel++) {
+                const channelData = audioBuffer.getChannelData(channel);
+                for (let i = 0; i < numFrames; i++) {
+                    // Sine wave formula: amplitude * Math.sin(2 * Math.PI * frequency * time)
+                    const time = i / sampleRate;
+                    // Use perfectDuration to modulate when we reach the end, creating perfect loops
+                    const modTime = time % perfectDuration;
+                    channelData[i] = 0.1 * Math.sin(2 * Math.PI * frequency * modTime);
+                }
+            }
+            
+            log(`Generated loopable ${frequency}Hz sine wave (30 seconds)`);
+            await generateAndDownload(audioBuffer, `sine-${frequency}hz.mp3`);
+        }
+        
+        // Triangle wave generator
+        async function generateTriangleWave() {
+            const context = initAudioContext();
+            const frequency = 440; // Hz
+            const duration = 30; // seconds (increased from 5 to 30)
+            const sampleRate = context.sampleRate;
+            const numChannels = 2;
+            const numFrames = sampleRate * duration;
+            const audioBuffer = context.createBuffer(numChannels, numFrames, sampleRate);
+            
+            // Calculate exact number of cycles to ensure perfect looping
+            const cycleDuration = 1 / frequency;
+            const totalCycles = Math.floor(duration / cycleDuration);
+            const perfectDuration = totalCycles * cycleDuration;
+            
+            // Fill with triangle wave
+            for (let channel = 0; channel < numChannels; channel++) {
+                const channelData = audioBuffer.getChannelData(channel);
+                for (let i = 0; i < numFrames; i++) {
+                    const time = i / sampleRate;
+                    // Use modulated time for perfect loop
+                    const modTime = time % perfectDuration;
+                    const period = 1 / frequency;
+                    const phase = (modTime % period) / period;
+                    
+                    // Triangle wave formula
+                    let value;
+                    if (phase < 0.25) {
+                        value = 4 * phase;
+                    } else if (phase < 0.75) {
+                        value = 2 - 4 * (phase - 0.25);
+                    } else {
+                        value = -2 + 4 * (phase - 0.75);
+                    }
+                    
+                    channelData[i] = 0.1 * value;
+                }
+            }
+            
+            log('Generated loopable triangle wave (30 seconds)');
+            await generateAndDownload(audioBuffer, 'triangle-wave.mp3');
+        }
+        
+        // Generate all audio files
+        async function generateAll() {
+            log('Starting batch generation of loopable audio files...');
+            await generateWhiteNoise();
+            await generatePinkNoise();
+            await generateSineWave(440);
+            await generateSineWave(220);
+            await generateTriangleWave();
+            log('All loopable audio files generated and downloaded!');
+        }
+        
+        // Convert AudioBuffer to WAV
+        function audioBufferToWav(audioBuffer) {
+            return new Promise(resolve => {
+                const numberOfChannels = audioBuffer.numberOfChannels;
+                const sampleRate = audioBuffer.sampleRate;
+                const format = 1; // PCM
+                const bitDepth = 16;
+                
+                const bytesPerSample = bitDepth / 8;
+                const blockAlign = numberOfChannels * bytesPerSample;
+                
+                const buffer = audioBuffer;
+                const numFrames = buffer.length;
+                const numSamples = numFrames * numberOfChannels;
+                const dataSize = numSamples * bytesPerSample;
+                const headerSize = 44;
+                const totalSize = headerSize + dataSize;
+                
+                const arrayBuffer = new ArrayBuffer(totalSize);
+                const view = new DataView(arrayBuffer);
+                
+                // RIFF identifier
+                writeString(view, 0, 'RIFF');
+                // RIFF chunk length
+                view.setUint32(4, 36 + dataSize, true);
+                // RIFF type
+                writeString(view, 8, 'WAVE');
+                // format chunk identifier
+                writeString(view, 12, 'fmt ');
+                // format chunk length
+                view.setUint32(16, 16, true);
+                // sample format (raw)
+                view.setUint16(20, format, true);
+                // channel count
+                view.setUint16(22, numberOfChannels, true);
+                // sample rate
+                view.setUint32(24, sampleRate, true);
+                // byte rate (sample rate * block align)
+                view.setUint32(28, sampleRate * blockAlign, true);
+                // block align (channel count * bytes per sample)
+                view.setUint16(32, blockAlign, true);
+                // bits per sample
+                view.setUint16(34, bitDepth, true);
+                // data chunk identifier
+                writeString(view, 36, 'data');
+                // data chunk length
+                view.setUint32(40, dataSize, true);
+                
+                // Write the PCM samples
+                const channelData = [];
+                let offset = headerSize;
+                for (let i = 0; i < buffer.numberOfChannels; i++) {
+                    channelData.push(buffer.getChannelData(i));
+                }
+                
+                for (let i = 0; i < numFrames; i++) {
+                    for (let c = 0; c < numberOfChannels; c++) {
+                        const sample = Math.max(-1, Math.min(1, channelData[c][i]));
+                        const value = (sample < 0 ? sample * 0x8000 : sample * 0x7FFF);
+                        view.setInt16(offset, value, true);
+                        offset += bytesPerSample;
+                    }
+                }
+                
+                function writeString(view, offset, string) {
+                    for (let i = 0; i < string.length; i++) {
+                        view.setUint8(offset + i, string.charCodeAt(i));
+                    }
+                }
+                
+                resolve(new Blob([arrayBuffer], { type: 'audio/wav' }));
+            });
+        }
+    </script>
+</body>
+</html> 

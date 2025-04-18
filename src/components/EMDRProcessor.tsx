@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, useAnimationControls } from 'framer-motion';
 import * as Tone from 'tone';
 import { AudioProcessor, createYouTubeAudioProcessor, resumeAudioContext } from '@/utils/audioUtils';
+import { sampleAudioFiles, getRandomSampleAudio } from '@/utils/sampleAudio';
 
 // Define the shape options with their SVG paths
 const SHAPES = {
@@ -79,6 +80,10 @@ export function EMDRProcessor() {
   const [youtubeError, setYoutubeError] = useState('');
   const [youtubeAudio, setYoutubeAudio] = useState<AudioProcessor | null>(null);
   const [youtubeEnabled, setYoutubeEnabled] = useState(false);
+  
+  // Sample audio integration
+  const [sampleAudioId, setSampleAudioId] = useState('');
+  const [useSampleAudio, setUseSampleAudio] = useState(false);
   
   // Physics values
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -370,6 +375,39 @@ export function EMDRProcessor() {
     setSettingsOpen(!settingsOpen);
   };
 
+  // Function to load a sample audio file
+  const loadSampleAudio = async (id?: string) => {
+    try {
+      setIsLoadingYoutube(true);
+      setYoutubeError('');
+      
+      // Get the sample audio file - either by ID or random
+      const sampleAudio = id 
+        ? sampleAudioFiles.find(audio => audio.id === id) || getRandomSampleAudio()
+        : getRandomSampleAudio();
+      
+      setSampleAudioId(sampleAudio.id);
+      
+      // Create audio processor
+      const processor = await createYouTubeAudioProcessor(
+        sampleAudio.url, 
+        sampleAudio.title
+      );
+      
+      setYoutubeTitle(sampleAudio.title);
+      setYoutubeAudio(processor);
+      setYoutubeEnabled(true);
+      setUseSampleAudio(true);
+      return true;
+    } catch (error) {
+      console.error('Error loading sample audio:', error);
+      setYoutubeError(error instanceof Error ? error.message : 'Failed to load sample audio');
+      return false;
+    } finally {
+      setIsLoadingYoutube(false);
+    }
+  };
+
   return (
     <div className="w-full h-screen flex flex-col relative">
       {/* Main content area - full viewport */}
@@ -510,6 +548,38 @@ export function EMDRProcessor() {
                 </div>
               )}
             </div>
+          </div>
+          
+          {/* Sample Audio Selection */}
+          <div className="flex flex-col mb-6 border-t border-gray-700 pt-4">
+            <h3 className="text-white font-medium mb-2">Sample Audio</h3>
+            <p className="text-gray-400 text-xs mb-2">
+              Use these royalty-free audio samples when YouTube isn't available
+            </p>
+            
+            <div className="grid grid-cols-1 gap-2">
+              {sampleAudioFiles.map((audio) => (
+                <button
+                  key={audio.id}
+                  onClick={() => loadSampleAudio(audio.id)}
+                  disabled={isActive}
+                  className={`p-2 rounded-md text-left ${
+                    sampleAudioId === audio.id && useSampleAudio
+                      ? 'bg-blue-600'
+                      : 'bg-gray-700 hover:bg-gray-600'
+                  }`}
+                >
+                  <div className="font-medium text-white">{audio.title}</div>
+                  <div className="text-xs text-gray-300">{audio.description}</div>
+                </button>
+              ))}
+            </div>
+            
+            {youtubeError && useSampleAudio && (
+              <div className="mt-2 p-2 bg-yellow-900 text-yellow-300 text-xs rounded">
+                <p>YouTube failed, using sample audio instead</p>
+              </div>
+            )}
           </div>
           
           {/* Speed Control */}

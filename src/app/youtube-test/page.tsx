@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { sampleAudioFiles } from '@/utils/sampleAudio';
 
 export default function YouTubeTest() {
   const [url, setUrl] = useState('');
@@ -8,6 +9,7 @@ export default function YouTubeTest() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [audioUrl, setAudioUrl] = useState('');
+  const [showSamples, setShowSamples] = useState(false);
 
   const testYouTubeAPI = async () => {
     if (!url) {
@@ -110,6 +112,39 @@ export default function YouTubeTest() {
         </div>
       )}
       
+      <div className="mt-8 border-t pt-6">
+        <button
+          onClick={() => setShowSamples(!showSamples)}
+          className="mb-4 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+        >
+          {showSamples ? 'Hide Sample Audio' : 'Show Sample Audio'}
+        </button>
+        
+        {showSamples && (
+          <div className="border rounded p-4 bg-gray-50">
+            <h2 className="text-xl font-semibold mb-4">Sample Audio Files</h2>
+            <p className="mb-4 text-sm text-gray-600">
+              These royalty-free audio samples can be used as fallbacks when YouTube doesn't work.
+            </p>
+            
+            <div className="grid gap-4">
+              {sampleAudioFiles.map((sample) => (
+                <div key={sample.id} className="border rounded p-3">
+                  <h3 className="font-medium mb-1">{sample.title}</h3>
+                  <p className="text-sm text-gray-600 mb-2">{sample.description}</p>
+                  <audio 
+                    src={sample.url} 
+                    controls 
+                    className="w-full"
+                    onError={(e) => console.error(`Error playing ${sample.title}:`, e)}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+      
       <div className="mt-6 text-sm text-gray-600">
         <h3 className="font-bold">Troubleshooting:</h3>
         <ul className="list-disc pl-5 space-y-1">
@@ -117,6 +152,7 @@ export default function YouTubeTest() {
           <li>If you see a 500 error, check server logs for details</li>
           <li>Some videos may work while others don't due to content restrictions</li>
           <li>Try using non-copyrighted content like Creative Commons videos</li>
+          <li>If YouTube doesn't work, use the sample audio files as a reliable alternative</li>
         </ul>
       </div>
     </div>

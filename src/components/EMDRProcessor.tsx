@@ -67,6 +67,7 @@ export function EMDRProcessor() {
   const [selectedColor, setSelectedColor] = useState('#ff0000');
   const [autoChangeColors, setAutoChangeColors] = useState(false);
   const [size, setSize] = useState(50); // px
+  const [audioPermissionGranted, setAudioPermissionGranted] = useState(false);
   
   // Sound effects
   const [soundEnabled, setSoundEnabled] = useState(false);
@@ -108,8 +109,35 @@ export function EMDRProcessor() {
       setAudioError('');
       setAudioFile(file);
       
+      // Request audio permission if not already granted
+      if (!audioPermissionGranted) {
+        const granted = await requestAudioPermission();
+        // Continue even if not granted, as the user can try later
+      }
+      
       // Create object URL for the file
       const fileUrl = URL.createObjectURL(file);
+      console.log(`Created URL for file: ${file.name}, size: ${file.size} bytes, type: ${file.type}`);
+      
+      // For local files, check if they're valid audio
+      try {
+        const tempAudio = new Audio();
+        tempAudio.src = fileUrl;
+        
+        // Wait briefly to check if the file loads
+        await new Promise((resolve, reject) => {
+          tempAudio.onloadedmetadata = resolve;
+          tempAudio.onerror = () => reject(new Error("Couldn't load audio file. The file may be corrupted or in an unsupported format."));
+          
+          // Timeout after 3 seconds
+          setTimeout(() => resolve(null), 3000);
+        });
+      } catch (validationError) {
+        console.error("File validation error:", validationError);
+        setAudioError(validationError instanceof Error ? validationError.message : "Invalid audio file");
+        setIsLoadingAudio(false);
+        return false;
+      }
       
       // Create audio processor with the file
       const processor = await createAudioProcessor(fileUrl, file.name);
@@ -125,7 +153,7 @@ export function EMDRProcessor() {
       return true;
     } catch (error) {
       console.error('Error loading audio file:', error);
-      setAudioError(error instanceof Error ? error.message : 'Failed to load audio file');
+      setAudioError(error instanceof Error ? error.message : 'Failed to load audio file. Try a different format or file.');
       return false;
     } finally {
       setIsLoadingAudio(false);
@@ -137,6 +165,12 @@ export function EMDRProcessor() {
     try {
       setIsLoadingAudio(true);
       setAudioError('');
+      
+      // Request audio permission if not already granted
+      if (!audioPermissionGranted) {
+        const granted = await requestAudioPermission();
+        // Continue even if not granted, as the user can try later
+      }
       
       // Get the sample audio file - either by ID or random
       const sampleAudio = id 
@@ -176,12 +210,23 @@ export function EMDRProcessor() {
   useEffect(() => {
     if (!audioProcessor) return;
     
-    if (isActive && audioEnabled) {
-      audioProcessor.play().catch(error => {
-        console.error('Error playing audio:', error);
-        setAudioError('Failed to play audio. Try clicking the start button again.');
-      });
-    } else {
+    const handleAudioPlayback = async () => {
+      if (isActive && audioEnabled) {
+        try {
+          await resumeAudioContext();
+          await audioProcessor.play();
+          console.log('Audio playback started from effect');
+        } catch (error) {
+          console.error('Effect error playing audio:', error);
+          setAudioError('Failed to play audio from effect. Click stop and start again.');
+        }
+      } else {
+        audioProcessor.pause();
+      }
+    };
+    
+    // Don't auto-start here since we handle it in the toggleActive function
+    if (!isActive) {
       audioProcessor.pause();
     }
     
@@ -202,6 +247,53 @@ export function EMDRProcessor() {
   // Physics-based animation
   useEffect(() => {
     if (!isActive || !containerRef.current) return;
+    
+    console.log("Animation effect starting with audio enabled:", audioEnabled);
+    
+    // Immediately try to resume audio context
+    const initAudio = async () => {
+      try {
+        await resumeAudioContext();
+        if (audioEnabled && audioProcessor) {
+          console.log("Animation effect resuming audio context and playing audio");
+          await audioProcessor.play().catch(async (err) => {
+            console.error("Failed to play audio, trying fallback:", err);
+            
+            // Fallback: Create a direct Audio element as last resort
+            if (audioFile) {
+              try {
+                const fallbackPlayer = new Audio(URL.createObjectURL(audioFile));
+                fallbackPlayer.volume = 0.5;
+                fallbackPlayer.loop = true;
+                await fallbackPlayer.play();
+                console.log("Using fallback audio player");
+              } catch (fallbackErr) {
+                console.error("Fallback player also failed:", fallbackErr);
+              }
+            } else if (useSampleAudio && sampleAudioId) {
+              // Try to play sample audio directly
+              const sampleAudio = sampleAudioFiles.find(audio => audio.id === sampleAudioId);
+              if (sampleAudio) {
+                try {
+                  const fallbackPlayer = new Audio(sampleAudio.url);
+                  fallbackPlayer.volume = 0.5;
+                  fallbackPlayer.loop = true;
+                  await fallbackPlayer.play();
+                  console.log("Using fallback sample audio player");
+                } catch (fallbackErr) {
+                  console.error("Sample fallback player failed:", fallbackErr);
+                }
+              }
+            }
+          });
+        }
+      } catch (err) {
+        console.error("Failed to initialize audio in animation effect:", err);
+      }
+    };
+    
+    // Call immediately
+    initAudio();
     
     // Get viewport dimensions
     const viewportWidth = window.innerWidth;
@@ -326,39 +418,133 @@ export function EMDRProcessor() {
     autoChangeColors,
     audioProcessor,
     audioEnabled,
-    position // Added position as dependency since we use it in the animation
   ]);
 
   // Handle start/stop
   const toggleActive = async () => {
-    // Initialize audio context on user interaction
-    await resumeAudioContext();
-    
-    if (!isActive) {
-      if (audioEnabled && !audioProcessor) {
-        // Try to load sample audio if no audio loaded
-        const success = await loadSampleAudio();
-        if (!success) {
-          return; // Don't start if audio loading failed
+    try {
+      // First, immediately try to resume audio context on user interaction
+      await resumeAudioContext().catch(err => {
+        console.error("Failed to resume audio context:", err);
+      });
+      
+      // If using Tone.js, ensure it's started too
+      if (typeof Tone !== 'undefined') {
+        await Tone.start().catch(err => {
+          console.error("Failed to start Tone.js:", err);
+        });
+      }
+      
+      // Check for audio permission first
+      if (audioEnabled && !audioPermissionGranted) {
+        const permissionGranted = await requestAudioPermission();
+        if (!permissionGranted) {
+          setAudioError("Please enable audio permission using the button in settings.");
+          // Continue anyway, but audio might not work
         }
       }
       
-      if (soundEnabled && !audioEnabled && sound) {
-        sound.playTone('G4', soundVolume); // Success tone
+      if (!isActive) {
+        if (audioEnabled && !audioProcessor) {
+          // Try to load sample audio if no audio loaded
+          const success = await loadSampleAudio();
+          if (!success) {
+            return; // Don't start if audio loading failed
+          }
+        }
+        
+        // Force some browser interaction to enable audio
+        if (sound) {
+          // Play and immediately stop a silent sound to kick-start audio
+          sound.playTone('C2', -100);
+          await new Promise(resolve => setTimeout(resolve, 10));
+        }
+        
+        if (audioEnabled && audioProcessor) {
+          // Make sure to resume the audio context before playing
+          await resumeAudioContext();
+          console.log("Starting audio playback...");
+          try {
+            await audioProcessor.play();
+            console.log("Audio playback started successfully");
+            // Set initial pan to center
+            audioProcessor.setPan(0);
+          } catch (error) {
+            console.error('Error playing audio:', error);
+            setAudioError('Failed to play audio. Please try clicking the start button again.');
+          }
+        }
+        
+        if (soundEnabled && !audioEnabled && sound) {
+          sound.playTone('G4', soundVolume); // Success tone
+        }
+      } else {
+        // Stopping - pause audio if active
+        if (audioProcessor) {
+          audioProcessor.pause();
+        }
       }
-    } else {
-      // Stopping - pause audio if active
-      if (audioProcessor) {
-        audioProcessor.pause();
-      }
+      
+      setIsActive(!isActive);
+    } catch (err) {
+      console.error("Toggle active failed:", err);
+      setAudioError("Failed to start. Please try again.");
     }
-    
-    setIsActive(!isActive);
   };
 
   // Toggle settings drawer
   const toggleSettings = () => {
     setSettingsOpen(!settingsOpen);
+  };
+
+  // Request audio permission explicitly
+  const requestAudioPermission = async () => {
+    try {
+      console.log("Requesting audio permission...");
+      
+      // Initialize Tone.js first (requires user gesture)
+      await Tone.start();
+      console.log("Tone.js context started");
+      
+      // Create temporary audio context just for permission
+      const tempContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      await tempContext.resume();
+      
+      // Play a silent sound to trigger permission
+      const oscillator = tempContext.createOscillator();
+      const gainNode = tempContext.createGain();
+      gainNode.gain.value = 0.01; // Almost silent
+      oscillator.connect(gainNode);
+      gainNode.connect(tempContext.destination);
+      
+      oscillator.start();
+      await new Promise(resolve => setTimeout(resolve, 100));
+      oscillator.stop();
+      
+      // Try to also resume our main audio context
+      await resumeAudioContext();
+      
+      // Also try to play a brief sound with the HTML Audio API
+      try {
+        const testSound = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA");
+        testSound.volume = 0.1;
+        await testSound.play();
+        setTimeout(() => testSound.pause(), 50);
+      } catch (e) {
+        console.warn("HTML Audio test failed, might be blocked:", e);
+      }
+      
+      setAudioPermissionGranted(true);
+      setAudioError('');
+      
+      console.log("Audio permission granted!");
+      
+      return true;
+    } catch (err) {
+      console.error("Failed to get audio permission:", err);
+      setAudioError('Audio permission denied. Please check your browser settings.');
+      return false;
+    }
   };
 
   return (
@@ -399,6 +585,20 @@ export function EMDRProcessor() {
             <span className="text-xs">Playing: {audioTitle}</span>
           </div>
         )}
+        
+        {/* Audio permission notice */}
+        {audioEnabled && !audioPermissionGranted && !isActive && (
+          <div className="absolute bottom-24 left-4 bg-yellow-900 bg-opacity-90 text-white p-3 rounded shadow-lg max-w-xs">
+            <p className="text-sm font-bold mb-2">Audio Permission Required</p>
+            <p className="text-xs mb-2">Arc browser requires explicit permission for audio playback</p>
+            <button
+              onClick={requestAudioPermission}
+              className="bg-yellow-600 hover:bg-yellow-500 text-white text-xs py-2 px-4 rounded"
+            >
+              Enable Audio
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Control bar with hamburger menu */}
@@ -413,6 +613,17 @@ export function EMDRProcessor() {
         >
           {isActive ? '⏹' : '▶'}
         </button>
+        
+        {audioEnabled && !audioPermissionGranted && (
+          <button
+            onClick={requestAudioPermission}
+            className="p-3 rounded-full bg-yellow-600 hover:bg-yellow-500 text-white"
+            aria-label="Enable Audio"
+            title="Enable Audio Permission"
+          >
+            🔊
+          </button>
+        )}
         
         <button 
           onClick={toggleSettings}
@@ -441,6 +652,29 @@ export function EMDRProcessor() {
           {/* Audio Upload */}
           <div className="flex flex-col mb-6 border-b border-gray-700 pb-4">
             <h3 className="text-white font-medium mb-2">Audio</h3>
+            
+            {/* Audio Permission Status */}
+            <div className="mb-4 p-3 rounded bg-gray-700">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-white text-sm">Audio Permission:</span>
+                <span className={`text-sm font-medium ${audioPermissionGranted ? 'text-green-400' : 'text-yellow-400'}`}>
+                  {audioPermissionGranted ? 'Granted ✓' : 'Required ⚠'}
+                </span>
+              </div>
+              
+              {!audioPermissionGranted && (
+                <button
+                  onClick={requestAudioPermission}
+                  className="w-full bg-yellow-600 hover:bg-yellow-500 text-white py-2 px-3 rounded text-sm"
+                >
+                  Enable Audio Permission
+                </button>
+              )}
+              
+              <p className="text-gray-300 text-xs mt-2">
+                Arc browser and other modern browsers require explicit user interaction to enable audio.
+              </p>
+            </div>
             
             <div className="flex flex-col space-y-2">
               <label htmlFor="audioFile" className="text-white text-sm">

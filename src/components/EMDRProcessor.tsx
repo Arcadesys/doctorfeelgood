@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import { AudioEngine, OscillatorType, ContactSoundConfig, ConstantToneConfig } from '../lib/audioEngine';
 
 // Simple version without the File System Access API
 type AudioFile = {
@@ -11,6 +12,14 @@ type AudioFile = {
   path?: string;
 };
 
+// Audio context interfaces
+interface AudioContextState {
+  context: AudioContext | null;
+  source: MediaElementAudioSourceNode | null;
+  panner: StereoPannerNode | null;
+  gainNode: GainNode | null;
+}
+
 export function EMDRProcessor() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [selectedAudio, setSelectedAudio] = useState<AudioFile | null>(null);
@@ -19,11 +28,45 @@ export function EMDRProcessor() {
   const [folderPath, setFolderPath] = useState<string>('');
   const [a11yMessage, setA11yMessage] = useState<string>('Visual target ready. Audio controls available at bottom of screen.');
   const [isDarkMode, setIsDarkMode] = useState(true);
+  const [panValue, setPanValue] = useState(0); // -1 (left) to 1 (right)
+  
+  // Audio engine settings
+  const [constantToneConfig, setConstantToneConfig] = useState<ConstantToneConfig>({
+    isOscillator: true,
+    oscillatorType: 'sine',
+    frequency: 440,
+    volume: 0.7,
+    envelope: {
+      attack: 0.1,
+      decay: 0.2,
+      sustain: 0.7,
+      release: 0.5
+    }
+  });
+  
+  const [contactSoundConfig, setContactSoundConfig] = useState<ContactSoundConfig>({
+    leftFrequency: 330,
+    rightFrequency: 440,
+    duration: 0.1,
+    oscillatorType: 'sine',
+    volume: 0.5
+  });
   
   // Animation state
   const [animationFrameId, setAnimationFrameId] = useState<number | null>(null);
   const animationIdRef = useRef<number | null>(null);
   const canvasSizedRef = useRef<boolean>(false);
+  
+  // Audio context state
+  const audioContextRef = useRef<AudioContextState>({
+    context: null,
+    source: null,
+    panner: null,
+    gainNode: null
+  });
+  
+  // Audio engine reference
+  const audioEngineRef = useRef<AudioEngine | null>(null);
   
   const menuRef = useRef<HTMLDivElement>(null);
   const menuOpenSoundRef = useRef<HTMLAudioElement>(null);
@@ -42,6 +85,51 @@ export function EMDRProcessor() {
       drawVisualTarget();
     }
   }, []);
+  
+  // Initialize Audio Engine
+  useEffect(() => {
+    // Create audio engine instance
+    const audioEngine = new AudioEngine();
+    
+    // Initialize with our audio element
+    if (audioPlayerRef.current) {
+      const success = audioEngine.initialize(audioPlayerRef.current);
+      
+      if (success) {
+        console.log('AudioEngine initialized with audio element');
+        
+        // Set initial configurations
+        audioEngine.updateConstantToneConfig(constantToneConfig);
+        audioEngine.updateContactSoundConfig(contactSoundConfig);
+        
+        // Store in ref
+        audioEngineRef.current = audioEngine;
+      } else {
+        console.error('Failed to initialize AudioEngine');
+      }
+    }
+    
+    // Clean up on unmount
+    return () => {
+      if (audioEngineRef.current) {
+        audioEngineRef.current.dispose();
+        audioEngineRef.current = null;
+      }
+    };
+  }, []);
+  
+  // Sync configurations with audio engine when they change
+  useEffect(() => {
+    if (audioEngineRef.current) {
+      audioEngineRef.current.updateConstantToneConfig(constantToneConfig);
+    }
+  }, [constantToneConfig]);
+  
+  useEffect(() => {
+    if (audioEngineRef.current) {
+      audioEngineRef.current.updateContactSoundConfig(contactSoundConfig);
+    }
+  }, [contactSoundConfig]);
   
   // Load audio metadata on mount
   useEffect(() => {
@@ -187,6 +275,67 @@ export function EMDRProcessor() {
     };
   }, [drawVisualTarget]); // Use drawVisualTarget as dependency (which internally depends on isPlaying)
   
+  // Set up audio context for panning
+  useEffect(() => {
+    // Clean up previous audio context
+    if (audioContextRef.current.context) {
+      return;
+    }
+    
+    // Create new audio context
+    try {
+      const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+      const context = new AudioContext();
+      const gainNode = context.createGain();
+      const panner = context.createStereoPanner();
+      
+      gainNode.connect(panner);
+      panner.connect(context.destination);
+      
+      audioContextRef.current = {
+        context,
+        source: null,
+        panner,
+        gainNode
+      };
+      
+      console.log('Audio context created successfully');
+    } catch (error) {
+      console.error('Failed to create audio context:', error);
+    }
+    
+    // Clean up on component unmount
+    return () => {
+      if (audioContextRef.current.context) {
+        audioContextRef.current.context.close();
+      }
+    };
+  }, []);
+  
+  // Connect audio element to audio context when it's available
+  useEffect(() => {
+    if (!audioPlayerRef.current || !audioContextRef.current.context || audioContextRef.current.source) {
+      return;
+    }
+    
+    try {
+      const source = audioContextRef.current.context.createMediaElementSource(audioPlayerRef.current);
+      source.connect(audioContextRef.current.gainNode!);
+      audioContextRef.current.source = source;
+      console.log('Audio source connected to context');
+    } catch (error) {
+      console.error('Failed to connect audio to context:', error);
+    }
+  }, [isPlaying]);
+  
+  // Update audio pan value when it changes
+  useEffect(() => {
+    if (audioContextRef.current.panner && audioContextRef.current.panner.pan) {
+      audioContextRef.current.panner.pan.value = panValue;
+      console.log(`Pan value updated to: ${panValue}`);
+    }
+  }, [panValue]);
+  
   // Handle canvas animation based on play state
   useEffect(() => {
     console.log("Animation useEffect triggered. isPlaying:", isPlaying);
@@ -225,18 +374,26 @@ export function EMDRProcessor() {
         // Move ball
         x += moveSpeed * direction;
         
+        // Calculate normalized position for panning (-1 to 1)
+        // -1 = far left, 0 = center, 1 = far right
+        const normalizedX = (2 * (x - minX) / (maxX - minX)) - 1;
+        setPanValue(normalizedX);
+        
+        // Update audio engine panning
+        if (audioEngineRef.current) {
+          audioEngineRef.current.setPan(normalizedX);
+        }
+        
         // Reverse direction if hitting edge
         if (x > maxX || x < minX) {
+          const hitRightWall = x > maxX;
           direction *= -1;
-          console.log("Reversing direction, now:", direction);
-          // Play a gentle tone when direction changes
-          const audioContext = new AudioContext();
-          const oscillator = audioContext.createOscillator();
-          oscillator.type = 'sine';
-          oscillator.frequency.setValueAtTime(direction > 0 ? 440 : 330, 0);
-          oscillator.connect(audioContext.destination);
-          oscillator.start();
-          oscillator.stop(0.1); // Short beep
+          console.log(`Reversing direction at ${hitRightWall ? 'right' : 'left'} wall, now:`, direction);
+          
+          // Play contact sound using audio engine
+          if (audioEngineRef.current) {
+            audioEngineRef.current.playContactSound(hitRightWall);
+          }
         }
         
         // Draw ball
@@ -254,6 +411,11 @@ export function EMDRProcessor() {
       console.log("Initiating animation frame");
       animationIdRef.current = requestAnimationFrame(animate);
       setAnimationFrameId(animationIdRef.current);
+      
+      // Start constant tone
+      if (audioEngineRef.current) {
+        audioEngineRef.current.startConstantTone();
+      }
     } else {
       // Stop animation and clear canvas when paused
       if (animationIdRef.current) {
@@ -261,6 +423,14 @@ export function EMDRProcessor() {
         cancelAnimationFrame(animationIdRef.current);
         animationIdRef.current = null;
         setAnimationFrameId(null);
+        
+        // Reset pan to center when animation stops
+        setPanValue(0);
+        
+        // Stop constant tone
+        if (audioEngineRef.current) {
+          audioEngineRef.current.stopConstantTone();
+        }
         
         // Clear canvas
         if (canvasRef.current) {
@@ -285,6 +455,11 @@ export function EMDRProcessor() {
         console.log("Cleanup: canceling animation frame");
         cancelAnimationFrame(animationIdRef.current);
         animationIdRef.current = null;
+        
+        // Stop constant tone
+        if (audioEngineRef.current) {
+          audioEngineRef.current.stopConstantTone();
+        }
       }
     };
   }, [isPlaying, isDarkMode]);
@@ -424,27 +599,50 @@ export function EMDRProcessor() {
   
   // Handle audio playback controls
   const togglePlayPause = () => {
-    if (!selectedAudio || !audioPlayerRef.current) return;
+    if (!selectedAudio) return;
     
     console.log("togglePlayPause: Current isPlaying state:", isPlaying);
     
     if (isPlaying) {
-      audioPlayerRef.current.pause();
+      // Stop playback through audio engine
+      if (audioEngineRef.current) {
+        audioEngineRef.current.stopConstantTone();
+      }
+      
+      // Also pause the audio element for backup
+      if (audioPlayerRef.current) {
+        audioPlayerRef.current.pause();
+      }
+      
       setA11yMessage('Paused. Visual target stopped.');
       // Play pause status sound (if available)
       playStatusSoundRef.current?.play().catch(e => console.error('Error playing status sound:', e));
       console.log("Setting isPlaying to false");
       setIsPlaying(false);
     } else {
-      audioPlayerRef.current.play()
-        .then(() => {
-          setA11yMessage(`Playing ${selectedAudio.name}. Visual target active.`);
-          // Play play status sound (if available)
-          playStatusSoundRef.current?.play().catch(e => console.error('Error playing status sound:', e));
-          console.log("Setting isPlaying to true after successful play");
-          setIsPlaying(true);
-        })
-        .catch(error => console.error("Error playing audio:", error));
+      // Start through audio engine first
+      let success = false;
+      if (audioEngineRef.current) {
+        success = audioEngineRef.current.startConstantTone();
+      }
+      
+      // If that fails, try direct audio element control
+      if (!success && audioPlayerRef.current) {
+        audioPlayerRef.current.play()
+          .then(() => {
+            setA11yMessage(`Playing ${selectedAudio.name}. Visual target active.`);
+            console.log("Setting isPlaying to true after successful play");
+            setIsPlaying(true);
+          })
+          .catch(error => console.error("Error playing audio:", error));
+      } else if (success) {
+        // Audio engine started successfully
+        setA11yMessage(`Playing ${selectedAudio.name}. Visual target active.`);
+        // Play status sound
+        playStatusSoundRef.current?.play().catch(e => console.error('Error playing status sound:', e));
+        console.log("Setting isPlaying to true");
+        setIsPlaying(true);
+      }
     }
   };
   
@@ -513,6 +711,36 @@ export function EMDRProcessor() {
     setA11yMessage(`${newDarkMode ? 'Dark' : 'Light'} mode activated`);
   };
 
+  // Handle oscillator type change
+  const handleOscillatorTypeChange = (type: OscillatorType) => {
+    setConstantToneConfig(prev => ({
+      ...prev,
+      oscillatorType: type
+    }));
+  };
+  
+  // Handle contact sound frequency change
+  const handleContactFrequencyChange = (isRight: boolean, frequency: number) => {
+    setContactSoundConfig(prev => ({
+      ...prev,
+      [isRight ? 'rightFrequency' : 'leftFrequency']: frequency
+    }));
+  };
+  
+  // Handle ADSR envelope change
+  const handleEnvelopeChange = (
+    parameter: 'attack' | 'decay' | 'sustain' | 'release', 
+    value: number
+  ) => {
+    setConstantToneConfig(prev => ({
+      ...prev,
+      envelope: {
+        ...prev.envelope,
+        [parameter]: value
+      }
+    }));
+  };
+
   return (
     <div className={`flex flex-col items-center justify-center min-h-screen ${isDarkMode ? 'bg-gray-900' : 'bg-white'} p-4 relative`}>
       {/* Audio elements for sound effects and playback */}
@@ -521,6 +749,7 @@ export function EMDRProcessor() {
       <audio ref={playStatusSoundRef} src="/sounds/status-change.mp3" preload="auto" />
       <audio 
         ref={audioPlayerRef}
+        loop={true} 
         onPlay={() => {
           console.log("Audio play event triggered");
           setIsPlaying(true);
@@ -531,13 +760,27 @@ export function EMDRProcessor() {
         }}
         onEnded={() => {
           console.log("Audio ended event triggered");
-          setIsPlaying(false);
-          setA11yMessage('Audio ended. Visual target stopped.');
+          // Don't stop the animation if the audio is set to loop
+          if (audioPlayerRef.current && !audioPlayerRef.current.loop) {
+            setIsPlaying(false);
+            setA11yMessage('Audio ended. Visual target stopped.');
+          }
         }}
         onError={(e) => {
           console.error("Audio error:", audioPlayerRef.current?.error);
-          setIsPlaying(false);
-          setA11yMessage('Error playing audio. Visual target stopped.');
+          // Try to recover from error by reloading the audio
+          if (audioPlayerRef.current && selectedAudio) {
+            console.log("Attempting to recover from audio error");
+            audioPlayerRef.current.load();
+            audioPlayerRef.current.play().catch(err => {
+              console.error("Recovery failed:", err);
+              setIsPlaying(false);
+              setA11yMessage('Error playing audio. Visual target stopped.');
+            });
+          } else {
+            setIsPlaying(false);
+            setA11yMessage('Error playing audio. Visual target stopped.');
+          }
         }}
       >
         {/* Provide explicit source with type for better browser compatibility */}
@@ -606,6 +849,215 @@ export function EMDRProcessor() {
               </svg>
               Dark
             </span>
+          </div>
+        </div>
+        
+        {/* Constant Tone Section */}
+        <div className="mb-6">
+          <h3 className="text-xl font-bold text-white dark:text-white text-gray-800 mb-4">Constant Tone</h3>
+          
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
+            <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Oscillator Type</h4>
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              {(['sine', 'square', 'sawtooth', 'triangle'] as OscillatorType[]).map(type => (
+                <button 
+                  key={type}
+                  onClick={() => handleOscillatorTypeChange(type)}
+                  className={`p-2 rounded text-sm ${
+                    constantToneConfig.oscillatorType === type 
+                    ? 'bg-blue-600 text-white' 
+                    : isDarkMode 
+                      ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' 
+                      : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                  }`}
+                  aria-label={`Oscillator type ${type}`}
+                  aria-pressed={constantToneConfig.oscillatorType === type}
+                >
+                  {type.charAt(0).toUpperCase() + type.slice(1)}
+                </button>
+              ))}
+            </div>
+            
+            <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+              Frequency: {constantToneConfig.frequency} Hz
+            </h4>
+            <input 
+              type="range" 
+              min="220" 
+              max="880" 
+              step="1"
+              value={constantToneConfig.frequency}
+              onChange={(e) => setConstantToneConfig(prev => ({
+                ...prev,
+                frequency: Number(e.target.value)
+              }))}
+              className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer mb-4`}
+              aria-label="Frequency"
+            />
+            
+            <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>ADSR Envelope</h4>
+            
+            <div className="mb-3">
+              <div className="flex justify-between mb-1">
+                <label className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                  Attack: {constantToneConfig.envelope.attack.toFixed(2)}s
+                </label>
+              </div>
+              <input 
+                type="range" 
+                min="0.01" 
+                max="2" 
+                step="0.01"
+                value={constantToneConfig.envelope.attack}
+                onChange={(e) => handleEnvelopeChange('attack', Number(e.target.value))}
+                className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
+                aria-label="Attack"
+              />
+            </div>
+            
+            <div className="mb-3">
+              <div className="flex justify-between mb-1">
+                <label className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                  Decay: {constantToneConfig.envelope.decay.toFixed(2)}s
+                </label>
+              </div>
+              <input 
+                type="range" 
+                min="0.01" 
+                max="2" 
+                step="0.01"
+                value={constantToneConfig.envelope.decay}
+                onChange={(e) => handleEnvelopeChange('decay', Number(e.target.value))}
+                className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
+                aria-label="Decay"
+              />
+            </div>
+            
+            <div className="mb-3">
+              <div className="flex justify-between mb-1">
+                <label className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                  Sustain: {constantToneConfig.envelope.sustain.toFixed(2)}
+                </label>
+              </div>
+              <input 
+                type="range" 
+                min="0.01" 
+                max="1" 
+                step="0.01"
+                value={constantToneConfig.envelope.sustain}
+                onChange={(e) => handleEnvelopeChange('sustain', Number(e.target.value))}
+                className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
+                aria-label="Sustain"
+              />
+            </div>
+            
+            <div className="mb-3">
+              <div className="flex justify-between mb-1">
+                <label className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                  Release: {constantToneConfig.envelope.release.toFixed(2)}s
+                </label>
+              </div>
+              <input 
+                type="range" 
+                min="0.01" 
+                max="3" 
+                step="0.01"
+                value={constantToneConfig.envelope.release}
+                onChange={(e) => handleEnvelopeChange('release', Number(e.target.value))}
+                className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
+                aria-label="Release"
+              />
+            </div>
+          </div>
+        </div>
+        
+        {/* Contact Sounds Section */}
+        <div className="mb-6">
+          <h3 className="text-xl font-bold text-white dark:text-white text-gray-800 mb-4">Contact Sounds</h3>
+          
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
+            <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Sound Type</h4>
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              {(['sine', 'square', 'sawtooth', 'triangle'] as OscillatorType[]).map(type => (
+                <button 
+                  key={type}
+                  onClick={() => setContactSoundConfig(prev => ({...prev, oscillatorType: type}))}
+                  className={`p-2 rounded text-sm ${
+                    contactSoundConfig.oscillatorType === type 
+                    ? 'bg-blue-600 text-white' 
+                    : isDarkMode 
+                      ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' 
+                      : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                  }`}
+                  aria-label={`Contact sound type ${type}`}
+                  aria-pressed={contactSoundConfig.oscillatorType === type}
+                >
+                  {type.charAt(0).toUpperCase() + type.slice(1)}
+                </button>
+              ))}
+            </div>
+            
+            <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+              Left Contact: {contactSoundConfig.leftFrequency} Hz
+            </h4>
+            <input 
+              type="range" 
+              min="220" 
+              max="880" 
+              step="1"
+              value={contactSoundConfig.leftFrequency}
+              onChange={(e) => handleContactFrequencyChange(false, Number(e.target.value))}
+              className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer mb-4`}
+              aria-label="Left contact frequency"
+            />
+            
+            <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+              Right Contact: {contactSoundConfig.rightFrequency} Hz
+            </h4>
+            <input 
+              type="range" 
+              min="220" 
+              max="880" 
+              step="1"
+              value={contactSoundConfig.rightFrequency}
+              onChange={(e) => handleContactFrequencyChange(true, Number(e.target.value))}
+              className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer mb-4`}
+              aria-label="Right contact frequency"
+            />
+            
+            <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+              Duration: {contactSoundConfig.duration.toFixed(2)}s
+            </h4>
+            <input 
+              type="range" 
+              min="0.05" 
+              max="0.5" 
+              step="0.01"
+              value={contactSoundConfig.duration}
+              onChange={(e) => setContactSoundConfig(prev => ({
+                ...prev,
+                duration: Number(e.target.value)
+              }))}
+              className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer mb-4`}
+              aria-label="Contact sound duration"
+            />
+            
+            <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+              Volume: {Math.round(contactSoundConfig.volume * 100)}%
+            </h4>
+            <input 
+              type="range" 
+              min="0" 
+              max="1" 
+              step="0.01"
+              value={contactSoundConfig.volume}
+              onChange={(e) => setContactSoundConfig(prev => ({
+                ...prev,
+                volume: Number(e.target.value)
+              }))}
+              className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
+              aria-label="Contact sound volume"
+            />
           </div>
         </div>
         
@@ -701,13 +1153,15 @@ export function EMDRProcessor() {
           
           {/* Pan Settings */}
           <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
-            <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Current Pan: 0.50 (Audio API: 0.00)</h4>
+            <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Current Pan: {(panValue + 1)/2 * 100}% (Audio API: {panValue.toFixed(2)})</h4>
             <div className="flex items-center mb-1">
               <span className={`text-xs ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>L</span>
               <input 
                 type="range" 
-                min="0" 
+                min="-100" 
                 max="100" 
+                value={panValue * 100}
+                onChange={(e) => setPanValue(Number(e.target.value) / 100)}
                 className={`flex-1 mx-2 h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
               />
               <span className={`text-xs ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>R</span>

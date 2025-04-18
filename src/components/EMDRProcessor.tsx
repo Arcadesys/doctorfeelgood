@@ -23,6 +23,7 @@ export function EMDRProcessor() {
   // Animation state
   const [animationFrameId, setAnimationFrameId] = useState<number | null>(null);
   const animationIdRef = useRef<number | null>(null);
+  const canvasSizedRef = useRef<boolean>(false);
   
   const menuRef = useRef<HTMLDivElement>(null);
   const menuOpenSoundRef = useRef<HTMLAudioElement>(null);
@@ -30,6 +31,17 @@ export function EMDRProcessor() {
   const audioPlayerRef = useRef<HTMLAudioElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const playStatusSoundRef = useRef<HTMLAudioElement>(null);
+  
+  // Initialize canvas when component mounts
+  useEffect(() => {
+    if (canvasRef.current && !canvasSizedRef.current) {
+      console.log("Initial canvas sizing");
+      canvasRef.current.width = window.innerWidth;
+      canvasRef.current.height = window.innerHeight;
+      canvasSizedRef.current = true;
+      drawVisualTarget();
+    }
+  }, []);
   
   // Load audio metadata on mount
   useEffect(() => {
@@ -177,7 +189,15 @@ export function EMDRProcessor() {
   
   // Handle canvas animation based on play state
   useEffect(() => {
+    console.log("Animation useEffect triggered. isPlaying:", isPlaying);
+    
     if (isPlaying && canvasRef.current) {
+      console.log("Starting animation, canvas:", canvasRef.current.width, "x", canvasRef.current.height);
+      
+      // Make sure canvas is properly sized
+      canvasRef.current.width = window.innerWidth;
+      canvasRef.current.height = window.innerHeight;
+      
       // Position and properties of the visual target
       let x = window.innerWidth / 2;
       let direction = 1; // 1 = right, -1 = left
@@ -188,10 +208,16 @@ export function EMDRProcessor() {
       
       // Animation function
       const animate = () => {
-        if (!canvasRef.current) return;
+        if (!canvasRef.current) {
+          console.log("Canvas ref is null during animation");
+          return;
+        }
         
         const ctx = canvasRef.current.getContext('2d');
-        if (!ctx) return;
+        if (!ctx) {
+          console.log("Could not get 2d context");
+          return;
+        }
         
         // Clear canvas
         ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
@@ -202,11 +228,13 @@ export function EMDRProcessor() {
         // Reverse direction if hitting edge
         if (x > maxX || x < minX) {
           direction *= -1;
+          console.log("Reversing direction, now:", direction);
           // Play a gentle tone when direction changes
-          const oscillator = new AudioContext().createOscillator();
+          const audioContext = new AudioContext();
+          const oscillator = audioContext.createOscillator();
           oscillator.type = 'sine';
           oscillator.frequency.setValueAtTime(direction > 0 ? 440 : 330, 0);
-          oscillator.connect(new AudioContext().destination);
+          oscillator.connect(audioContext.destination);
           oscillator.start();
           oscillator.stop(0.1); // Short beep
         }
@@ -223,11 +251,13 @@ export function EMDRProcessor() {
       };
       
       // Start animation
+      console.log("Initiating animation frame");
       animationIdRef.current = requestAnimationFrame(animate);
       setAnimationFrameId(animationIdRef.current);
     } else {
       // Stop animation and clear canvas when paused
       if (animationIdRef.current) {
+        console.log("Canceling animation frame:", animationIdRef.current);
         cancelAnimationFrame(animationIdRef.current);
         animationIdRef.current = null;
         setAnimationFrameId(null);
@@ -239,12 +269,20 @@ export function EMDRProcessor() {
             ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
           }
         }
+      } else {
+        console.log("No animation frame to cancel");
       }
+      
+      // Draw static ball after stopping animation
+      setTimeout(() => {
+        drawVisualTarget();
+      }, 50);
     }
     
     // Cleanup animation frame on component unmount
     return () => {
       if (animationIdRef.current) {
+        console.log("Cleanup: canceling animation frame");
         cancelAnimationFrame(animationIdRef.current);
         animationIdRef.current = null;
       }
@@ -334,7 +372,19 @@ export function EMDRProcessor() {
             details: error
           });
         };
-        audioPlayerRef.current.src = '/audio/sine-440hz.mp3';
+        
+        // Create and append a new source element to guarantee reload
+        const sourceElement = document.createElement('source');
+        sourceElement.src = '/audio/sine-440hz.mp3';
+        sourceElement.type = 'audio/mpeg';
+        
+        // Clear existing source elements
+        while (audioPlayerRef.current.firstChild) {
+          audioPlayerRef.current.removeChild(audioPlayerRef.current.firstChild);
+        }
+        
+        // Add the new source element
+        audioPlayerRef.current.appendChild(sourceElement);
         audioPlayerRef.current.load();
       }
       return;
@@ -343,9 +393,20 @@ export function EMDRProcessor() {
     // Play the audio file
     if (audioPlayerRef.current) {
       // For all files, use the placeholder if not in development with default file
-      audioPlayerRef.current.src = '/sounds/menu-open.mp3'; 
+      const sourceElement = document.createElement('source');
+      sourceElement.src = '/sounds/menu-open.mp3';
+      sourceElement.type = 'audio/mpeg';
       
-      console.log(`Playing audio: ${audioPlayerRef.current.src}`);
+      // Clear existing source elements
+      while (audioPlayerRef.current.firstChild) {
+        audioPlayerRef.current.removeChild(audioPlayerRef.current.firstChild);
+      }
+      
+      // Add the new source element
+      audioPlayerRef.current.appendChild(sourceElement);
+      
+      console.log(`Playing audio: ${sourceElement.src}`);
+      audioPlayerRef.current.load();
       audioPlayerRef.current.play()
         .then(() => {
           setIsPlaying(true);
@@ -365,22 +426,26 @@ export function EMDRProcessor() {
   const togglePlayPause = () => {
     if (!selectedAudio || !audioPlayerRef.current) return;
     
+    console.log("togglePlayPause: Current isPlaying state:", isPlaying);
+    
     if (isPlaying) {
       audioPlayerRef.current.pause();
       setA11yMessage('Paused. Visual target stopped.');
       // Play pause status sound (if available)
       playStatusSoundRef.current?.play().catch(e => console.error('Error playing status sound:', e));
+      console.log("Setting isPlaying to false");
+      setIsPlaying(false);
     } else {
       audioPlayerRef.current.play()
         .then(() => {
           setA11yMessage(`Playing ${selectedAudio.name}. Visual target active.`);
           // Play play status sound (if available)
           playStatusSoundRef.current?.play().catch(e => console.error('Error playing status sound:', e));
+          console.log("Setting isPlaying to true after successful play");
+          setIsPlaying(true);
         })
         .catch(error => console.error("Error playing audio:", error));
     }
-    
-    setIsPlaying(!isPlaying);
   };
   
   // Handle audio file deletion
@@ -424,20 +489,22 @@ export function EMDRProcessor() {
       document.documentElement.classList.add('dark');
       localStorage.setItem('theme', 'dark');
       // Play a deeper tone for dark mode
-      const oscillator = new AudioContext().createOscillator();
+      const audioContext = new AudioContext();
+      const oscillator = audioContext.createOscillator();
       oscillator.type = 'sine';
       oscillator.frequency.setValueAtTime(220, 0);
-      oscillator.connect(new AudioContext().destination);
+      oscillator.connect(audioContext.destination);
       oscillator.start();
       oscillator.stop(0.2);
     } else {
       document.documentElement.classList.remove('dark');
       localStorage.setItem('theme', 'light');
       // Play a higher tone for light mode
-      const oscillator = new AudioContext().createOscillator();
+      const audioContext = new AudioContext();
+      const oscillator = audioContext.createOscillator();
       oscillator.type = 'sine';
       oscillator.frequency.setValueAtTime(440, 0);
-      oscillator.connect(new AudioContext().destination);
+      oscillator.connect(audioContext.destination);
       oscillator.start();
       oscillator.stop(0.2);
     }
@@ -454,15 +521,29 @@ export function EMDRProcessor() {
       <audio ref={playStatusSoundRef} src="/sounds/status-change.mp3" preload="auto" />
       <audio 
         ref={audioPlayerRef}
+        onPlay={() => {
+          console.log("Audio play event triggered");
+          setIsPlaying(true);
+        }}
+        onPause={() => {
+          console.log("Audio pause event triggered");
+          setIsPlaying(false);
+        }}
         onEnded={() => {
+          console.log("Audio ended event triggered");
           setIsPlaying(false);
           setA11yMessage('Audio ended. Visual target stopped.');
         }}
-        onError={() => {
+        onError={(e) => {
+          console.error("Audio error:", audioPlayerRef.current?.error);
           setIsPlaying(false);
           setA11yMessage('Error playing audio. Visual target stopped.');
         }}
-      />
+      >
+        {/* Provide explicit source with type for better browser compatibility */}
+        <source src="/audio/sine-440hz.mp3" type="audio/mpeg" />
+        Your browser does not support the audio element.
+      </audio>
       
       {/* Hamburger Menu Button */}
       <button 
@@ -668,10 +749,11 @@ export function EMDRProcessor() {
       {/* Full viewport canvas for visual target */}
       <canvas 
         ref={canvasRef}
-        className={`fixed top-0 left-0 w-screen h-screen -z-10 ${isDarkMode ? '' : 'bg-white'}`}
+        className={`fixed top-0 left-0 w-screen h-screen ${isDarkMode ? 'bg-gray-900' : 'bg-white'} z-0`}
         aria-label="EMDR visual target canvas"
         role="img"
         aria-live="polite"
+        style={{ pointerEvents: 'none' }}
       />
       
       {/* Accessibility announcement for screen readers */}

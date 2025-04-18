@@ -36,6 +36,7 @@ export interface AudioProcessor {
   isPlaying: () => boolean;
   getTitle: () => string;
   onEnded: (callback: () => void) => void;
+  getCurrentPan: () => number;
 }
 
 export const createAudioProcessor = async (
@@ -252,44 +253,48 @@ export const createAudioProcessor = async (
       }
     },
     pause: () => {
-      audioElement.pause();
-      isCurrentlyPlaying = false;
+      if (audioElement && !audioElement.paused) {
+        audioElement.pause();
+        isCurrentlyPlaying = false;
+      }
     },
     stop: () => {
-      audioElement.pause();
-      audioElement.currentTime = 0;
-      isCurrentlyPlaying = false;
+      if (audioElement) {
+        audioElement.pause();
+        audioElement.currentTime = 0;
+        isCurrentlyPlaying = false;
+      }
     },
     setPan: (value: number) => {
-      // Only set pan if audio nodes are initialized
-      if (audioNodesInitialized) {
-        // Ensure value is between -1 and 1
+      if (pannerNode) {
+        // Clamp value between -1 and 1
         const clampedValue = Math.max(-1, Math.min(1, value));
         pannerNode.pan.value = clampedValue;
-      } else {
-        console.log('Cannot set pan yet - audio nodes not initialized');
-        // Try to initialize if we're playing but nodes aren't ready
-        if (isCurrentlyPlaying) {
-          initAudioNodes().then(() => {
-            pannerNode.pan.value = Math.max(-1, Math.min(1, value));
-            console.log('Pan set after delayed initialization');
-          }).catch(err => console.error('Failed to init nodes for panning:', err));
-        }
       }
+    },
+    getCurrentPan: () => {
+      return pannerNode ? pannerNode.pan.value : 0;
     },
     setVolume: (value: number) => {
-      // Only set gain if audio nodes are initialized
-      if (audioNodesInitialized) {
-        // Convert dB to linear
-        if (value <= -100) {
-          gainNode.gain.value = 0;
-        } else {
-          gainNode.gain.value = Math.pow(10, value / 20);
-        }
+      // Convert dB to linear gain (value is in dB)
+      // Formula: gain = 10^(dB/20)
+      const dbValue = Math.max(-60, Math.min(0, value)); // Clamp between -60dB and 0dB
+      const gainValue = Math.pow(10, dbValue / 20);
+      
+      if (gainNode) {
+        gainNode.gain.value = gainValue;
+      } else {
+        // Fallback to element volume (0-1 scale)
+        // Convert from our -60-0dB scale to 0-1
+        audioElement.volume = Math.max(0, Math.min(1, (dbValue + 60) / 60));
       }
     },
-    isPlaying: () => isCurrentlyPlaying,
-    getTitle: () => title,
+    isPlaying: () => {
+      return isCurrentlyPlaying;
+    },
+    getTitle: () => {
+      return title;
+    },
     onEnded: (callback: () => void) => {
       endedCallback = callback;
     }

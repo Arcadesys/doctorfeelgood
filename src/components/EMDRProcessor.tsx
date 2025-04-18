@@ -305,109 +305,174 @@ export function EMDRProcessor() {
       y: viewportHeight / 2
     });
     
-    // Define fixed positions for smooth movement, with wider range
-    const positions = [
-      { x: viewportWidth * 0.1, y: viewportHeight / 2 },   // Far left
-      { x: viewportWidth * 0.5, y: viewportHeight / 2 },   // Center
-      { x: viewportWidth * 0.9, y: viewportHeight / 2 },   // Far right
-      { x: viewportWidth * 0.5, y: viewportHeight / 2 },   // Center
-    ];
+    // Whether we're using audio pan values to control position
+    const useAudioPan = audioEnabled && audioProcessor;
     
-    let positionIndex = 0;
-    let playedSound = false;
-    let isTransitioning = false;
-    
-    // Create an interval that triggers transitions between positions
-    const interval = setInterval(() => {
-      if (isTransitioning) return; // Skip if already in transition
+    if (!useAudioPan) {
+      // TRADITIONAL MOVEMENT LOGIC - When not controlled by audio
+      // Define fixed positions for smooth movement, with wider range
+      const positions = [
+        { x: viewportWidth * 0.1, y: viewportHeight / 2 },   // Far left
+        { x: viewportWidth * 0.5, y: viewportHeight / 2 },   // Center
+        { x: viewportWidth * 0.9, y: viewportHeight / 2 },   // Far right
+        { x: viewportWidth * 0.5, y: viewportHeight / 2 },   // Center
+      ];
       
-      // Set the next position index
-      positionIndex = (positionIndex + 1) % positions.length;
-      const nextPosition = positions[positionIndex];
+      let positionIndex = 0;
+      let playedSound = false;
+      let isTransitioning = false;
       
-      // Start transition
-      isTransitioning = true;
-      
-      // Play sound at extremes (positions 0 and 2)
-      if (soundEnabled && sound && !audioEnabled) {
-        if (positionIndex === 0) {
-          sound.playTone('C4', soundVolume);
-        } else if (positionIndex === 2) {
-          sound.playTone('G4', soundVolume);
+      // Create an interval that triggers transitions between positions
+      const interval = setInterval(() => {
+        if (isTransitioning) return; // Skip if already in transition
+        
+        // Set the next position index
+        positionIndex = (positionIndex + 1) % positions.length;
+        const nextPosition = positions[positionIndex];
+        
+        // Start transition
+        isTransitioning = true;
+        
+        // Play sound at extremes (positions 0 and 2)
+        if (soundEnabled && sound && !audioEnabled) {
+          if (positionIndex === 0) {
+            sound.playTone('C4', soundVolume);
+          } else if (positionIndex === 2) {
+            sound.playTone('G4', soundVolume);
+          }
         }
-      }
-      
-      // Change color if enabled and at extreme positions
-      if (autoChangeColors && (positionIndex === 0 || positionIndex === 2)) {
-        setSelectedColor(COLORS[Math.floor(Math.random() * COLORS.length)].value);
-      }
-      
-      // Create smooth transition
-      const startPosition = { ...position };
-      const startTime = Date.now();
-      const duration = Math.max(500, speed); // Transition duration in ms
-      
-      // Create animation function
-      const animate = () => {
-        const elapsed = Date.now() - startTime;
-        const progress = Math.min(elapsed / duration, 1);
         
-        // Easing function for smooth transition (ease-in-out)
-        const eased = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+        // Change color if enabled and at extreme positions
+        if (autoChangeColors && (positionIndex === 0 || positionIndex === 2)) {
+          setSelectedColor(COLORS[Math.floor(Math.random() * COLORS.length)].value);
+        }
         
-        // Calculate current position
-        const currentX = startPosition.x + (nextPosition.x - startPosition.x) * eased;
-        const currentY = startPosition.y + (nextPosition.y - startPosition.y) * eased;
+        // Create smooth transition
+        const startPosition = { ...position };
+        const startTime = Date.now();
+        const duration = Math.max(500, speed); // Transition duration in ms
         
-        // Update position
+        // Create animation function
+        const animate = () => {
+          const elapsed = Date.now() - startTime;
+          const progress = Math.min(elapsed / duration, 1);
+          
+          // Easing function for smooth transition (ease-in-out)
+          const eased = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+          
+          // Calculate current position
+          const currentX = startPosition.x + (nextPosition.x - startPosition.x) * eased;
+          const currentY = startPosition.y + (nextPosition.y - startPosition.y) * eased;
+          
+          // Update position
+          setPosition({
+            x: currentX,
+            y: currentY
+          });
+          
+          // Update panner for audio - full -1 to 1 range
+          if (audioProcessor && audioEnabled) {
+            // Map x position to panner value (-1 to 1)
+            const normalizedPosition = (currentX - (viewportWidth * 0.1)) / (viewportWidth * 0.8);
+            const panValue = (normalizedPosition * 2) - 1;
+            audioProcessor.setPan(Math.max(-1, Math.min(1, panValue)));
+          }
+          
+          // Continue animation if not complete
+          if (progress < 1) {
+            requestAnimationFrame(animate);
+          } else {
+            isTransitioning = false;
+          }
+        };
+        
+        // Start animation
+        requestAnimationFrame(animate);
+        
+      }, Math.max(1000, speed * 1.5)); // Wait time between movements
+      
+      return () => {
+        clearInterval(interval);
+      };
+    } else {
+      // AUDIO-CONTROLLED MOVEMENT - Position follows audio pan
+      
+      // Setup pan detection frame loop
+      let frameId: number;
+      let lastPanValue = 0;
+      
+      // Function to update position based on audio pan
+      const updatePositionFromPan = () => {
+        if (!audioProcessor || !audioEnabled) return;
+        
+        // Get current pan value from audio processor
+        const currentPan = audioProcessor.getCurrentPan();
+        
+        // Always update position on each frame for smoothest movement
+        // Pan range is -1 to 1, convert to screen position
+        // -1 = far left (10% of screen), 0 = center, 1 = far right (90% of screen)
+        const newX = ((currentPan + 1) / 2) * (viewportWidth * 0.8) + (viewportWidth * 0.1);
+        
+        // Update position state
         setPosition({
-          x: currentX,
-          y: currentY
+          x: newX,
+          y: viewportHeight / 2 // Keep vertical position centered
         });
         
-        // Update panner for audio - full -1 to 1 range
-        if (audioProcessor && audioEnabled) {
-          // Map x position to panner value (-1 to 1)
-          const normalizedPosition = (currentX - (viewportWidth * 0.1)) / (viewportWidth * 0.8);
-          const panValue = (normalizedPosition * 2) - 1;
-          audioProcessor.setPan(Math.max(-1, Math.min(1, panValue)));
+        // Only trigger special effects when crossing thresholds
+        if (currentPan !== lastPanValue) {
+          // Handle color changes at extremes
+          if (autoChangeColors) {
+            if (Math.abs(currentPan) > 0.9 && Math.abs(lastPanValue) <= 0.9) {
+              setSelectedColor(COLORS[Math.floor(Math.random() * COLORS.length)].value);
+            }
+          }
+          
+          // Play sound at extremes if enabled
+          if (soundEnabled && sound) {
+            if (Math.abs(currentPan) > 0.9 && Math.abs(lastPanValue) <= 0.9) {
+              sound.playTone(currentPan > 0 ? 'G4' : 'C4', soundVolume);
+            }
+          }
+          
+          lastPanValue = currentPan;
         }
         
-        // Continue animation if not complete
-        if (progress < 1) {
-          requestAnimationFrame(animate);
-        } else {
-          isTransitioning = false;
+        // Continue the animation loop
+        frameId = requestAnimationFrame(updatePositionFromPan);
+      };
+      
+      // Start the animation loop
+      frameId = requestAnimationFrame(updatePositionFromPan);
+      
+      // Handle window resize
+      const handleResize = () => {
+        const newWidth = window.innerWidth;
+        const newHeight = window.innerHeight;
+        
+        // Recalculate position based on current pan value
+        if (audioProcessor) {
+          const currentPan = audioProcessor.getCurrentPan();
+          const newX = ((currentPan + 1) / 2) * (newWidth * 0.8) + (newWidth * 0.1);
+          
+          // Update position state
+          setPosition({
+            x: newX,
+            y: newHeight / 2 // Keep vertical position centered
+          });
         }
       };
       
-      // Start animation
-      requestAnimationFrame(animate);
+      window.addEventListener('resize', handleResize);
       
-    }, Math.max(1000, speed * 1.5)); // Wait time between movements
-    
-    // Handle window resize
-    const handleResize = () => {
-      const newWidth = window.innerWidth;
-      const newHeight = window.innerHeight;
-      
-      // Update positions array for the new dimensions
-      positions[0].x = newWidth * 0.1;  // Far left
-      positions[0].y = newHeight / 2;
-      positions[1].x = newWidth * 0.5;  // Center
-      positions[1].y = newHeight / 2;
-      positions[2].x = newWidth * 0.9;  // Far right
-      positions[2].y = newHeight / 2;
-      positions[3].x = newWidth * 0.5;  // Center
-      positions[3].y = newHeight / 2;
-    };
-    
-    window.addEventListener('resize', handleResize);
-    
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener('resize', handleResize);
-    };
+      return () => {
+        // Clean up
+        if (frameId) {
+          cancelAnimationFrame(frameId);
+        }
+        window.removeEventListener('resize', handleResize);
+      };
+    }
   }, [
     isActive,
     size,
@@ -583,6 +648,25 @@ export function EMDRProcessor() {
         {audioEnabled && audioTitle && (
           <div className="absolute bottom-4 left-4 bg-black bg-opacity-50 text-white p-2 rounded max-w-xs truncate">
             <span className="text-xs">Playing: {audioTitle}</span>
+            
+            {/* Audio pan visualization */}
+            {isActive && (
+              <div className="mt-1 flex items-center" aria-label="Audio pan position indicator">
+                <div className="h-2 bg-gray-700 rounded-full w-full flex items-center relative">
+                  <div 
+                    className="h-4 w-2 bg-white absolute rounded-full transform -translate-y-1/2"
+                    style={{ 
+                      left: `${((audioProcessor?.getCurrentPan() || 0) + 1) * 50}%`,
+                      transition: 'left 0.05s ease-out'
+                    }}
+                    aria-hidden="true"
+                  />
+                </div>
+                <span className="text-xs ml-2 sr-only">
+                  Pan: {Math.round(((audioProcessor?.getCurrentPan() || 0) + 1) * 50)}% left to right
+                </span>
+              </div>
+            )}
           </div>
         )}
         
@@ -728,6 +812,17 @@ export function EMDRProcessor() {
               )}
             </div>
           </div>
+          
+          {/* Explanation of audio panning */}
+          {audioEnabled && (
+            <div className="mt-2 p-3 rounded bg-blue-900 bg-opacity-40 text-sm text-blue-100">
+              <p className="mb-1 font-medium">About audio mode:</p>
+              <p className="text-xs">
+                When audio is enabled, the target position is controlled by the stereo panning of the audio. 
+                The target will move left and right as the sound moves between your left and right speakers or headphones.
+              </p>
+            </div>
+          )}
           
           {/* Sample Audio Selection */}
           <div className="flex flex-col mb-6 border-t border-gray-700 pt-4">

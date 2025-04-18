@@ -1,3 +1,5 @@
+'use client';
+
 import { EMDRProcessor } from '@/components/EMDRProcessor';
 import EMDRSession from '@/components/EMDRSession';
 

@@ -3,12 +3,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 
+// Simple version without the File System Access API
 type AudioFile = {
   id: string;
   name: string;
   lastUsed: string;
-  url?: string; // For locally stored files
-  data?: string; // For base64 encoded audio data
+  path?: string;
 };
 
 export function EMDRProcessor() {
@@ -16,27 +16,27 @@ export function EMDRProcessor() {
   const [selectedAudio, setSelectedAudio] = useState<AudioFile | null>(null);
   const [audioFiles, setAudioFiles] = useState<AudioFile[]>([]);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [showUploadTip, setShowUploadTip] = useState(false);
+  const [folderPath, setFolderPath] = useState<string>('');
   
   const menuRef = useRef<HTMLDivElement>(null);
   const menuOpenSoundRef = useRef<HTMLAudioElement>(null);
   const menuCloseSoundRef = useRef<HTMLAudioElement>(null);
   const audioPlayerRef = useRef<HTMLAudioElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const mainFileInputRef = useRef<HTMLInputElement>(null);
   
-  // Load audio files from localStorage on component mount
+  // Load audio metadata on mount
   useEffect(() => {
-    const storedFiles = localStorage.getItem('audioFiles');
+    // In a real implementation, this would communicate with a backend service
+    // that can access the filesystem directly
+    const storedFiles = localStorage.getItem('audioFilesMeta');
     if (storedFiles) {
       setAudioFiles(JSON.parse(storedFiles));
     } else {
-      // Default sample file
+      // Default sample files
       const defaultFiles = [
-        { id: '1', name: 'Outer Wilds.m4a', lastUsed: '4/18/2025 08:51 AM' }
+        { id: '1', name: 'Outer Wilds.m4a', lastUsed: '4/18/2025 08:58 AM', path: '/music/Outer Wilds.m4a' }
       ];
       setAudioFiles(defaultFiles);
-      localStorage.setItem('audioFiles', JSON.stringify(defaultFiles));
+      localStorage.setItem('audioFilesMeta', JSON.stringify(defaultFiles));
     }
     
     // Load last selected audio
@@ -44,21 +44,17 @@ export function EMDRProcessor() {
     if (lastSelectedAudio) {
       setSelectedAudio(JSON.parse(lastSelectedAudio));
     }
-
-    // Show upload tip if no files have been uploaded yet
-    if (!localStorage.getItem('uploadTipShown')) {
-      setShowUploadTip(true);
-      // Set a timeout to hide the tip after 5 seconds
-      setTimeout(() => {
-        setShowUploadTip(false);
-        localStorage.setItem('uploadTipShown', 'true');
-      }, 5000);
+    
+    // Load saved folder path
+    const savedFolderPath = localStorage.getItem('folderPath');
+    if (savedFolderPath) {
+      setFolderPath(savedFolderPath);
     }
   }, []);
   
-  // Save audio files to localStorage when they change
+  // Save audio metadata to localStorage when they change
   useEffect(() => {
-    localStorage.setItem('audioFiles', JSON.stringify(audioFiles));
+    localStorage.setItem('audioFilesMeta', JSON.stringify(audioFiles));
   }, [audioFiles]);
   
   // Save selected audio to localStorage when it changes
@@ -95,18 +91,40 @@ export function EMDRProcessor() {
     };
   }, [isMenuOpen]);
   
-  // Handle audio file selection and playback
+  // Select folder path (this would normally open a native file picker)
+  const selectMusicFolder = () => {
+    // In a real app, this would show a native folder picker dialog
+    // and store the selected path
+    const mockPath = prompt('Enter your music folder path:', folderPath || '/Users/Music');
+    
+    if (mockPath) {
+      setFolderPath(mockPath);
+      localStorage.setItem('folderPath', mockPath);
+      
+      // This would normally trigger a scan of the directory
+      // In this mock implementation, we'll just add a sample file
+      if (!audioFiles.some(file => file.id === '2')) {
+        const newFile = {
+          id: '2',
+          name: 'Sample Song.mp3',
+          lastUsed: new Date().toLocaleString(),
+          path: `${mockPath}/Sample Song.mp3`
+        };
+        
+        setAudioFiles(prev => [...prev, newFile]);
+      }
+    }
+  };
+  
+  // Handle audio file selection 
   const selectAudioFile = (file: AudioFile) => {
     setSelectedAudio(file);
     
-    // Play the selected audio if it has data
-    if (file.data && audioPlayerRef.current) {
-      audioPlayerRef.current.src = file.data;
-      audioPlayerRef.current.play()
-        .then(() => setIsPlaying(true))
-        .catch(error => console.error("Error playing audio:", error));
-    } else if (file.url && audioPlayerRef.current) {
-      audioPlayerRef.current.src = file.url;
+    // In a real implementation, this would access the file from the filesystem
+    // For this mock, we'll just simulate playback
+    if (audioPlayerRef.current) {
+      // In a real app, we'd set the src to the actual file path
+      audioPlayerRef.current.src = '/sounds/menu-open.mp3'; // Just a placeholder sound
       audioPlayerRef.current.play()
         .then(() => setIsPlaying(true))
         .catch(error => console.error("Error playing audio:", error));
@@ -147,7 +165,7 @@ export function EMDRProcessor() {
       setIsPlaying(false);
     }
     
-    // Remove the file from state
+    // Remove the file from state (but not from file system)
     setAudioFiles(audioFiles.filter(file => file.id !== id));
     
     // Clear selected audio if it's the one being deleted
@@ -157,50 +175,16 @@ export function EMDRProcessor() {
     }
   };
   
-  // Handle file upload
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-    
-    const file = files[0];
-    const reader = new FileReader();
-    
-    reader.onload = (event) => {
-      if (event.target && event.target.result) {
-        // Create a new audio file entry
-        const newFile: AudioFile = {
-          id: Date.now().toString(),
-          name: file.name,
-          lastUsed: new Date().toLocaleString(),
-          data: event.target.result as string
-        };
-        
-        // Add to audio files list
-        const updatedFiles = [...audioFiles, newFile];
-        setAudioFiles(updatedFiles);
-        
-        // Select the newly uploaded file
-        selectAudioFile(newFile);
-        
-        // Play a success sound
-        const successSound = new Audio('/sounds/upload-success.mp3');
-        successSound.play().catch(e => console.log('Could not play success sound', e));
-        
-        // Show the menu to see the uploaded file
-        if (!isMenuOpen) {
-          toggleMenu();
-        }
-      }
-    };
-    
-    reader.readAsDataURL(file);
-    
-    // Reset the file input
-    if (e.target === fileInputRef.current) {
-      fileInputRef.current.value = '';
-    } else if (e.target === mainFileInputRef.current) {
-      mainFileInputRef.current.value = '';
+  // Generate an MD5 hash (mock implementation)
+  const generateMD5Hash = (input: string) => {
+    // This is a simplified mock implementation
+    // In a real app, you'd use a proper MD5 implementation
+    let hash = 0;
+    for (let i = 0; i < input.length; i++) {
+      hash = ((hash << 5) - hash) + input.charCodeAt(i);
+      hash |= 0; // Convert to 32bit integer
     }
+    return hash.toString(16);
   };
 
   return (
@@ -226,32 +210,6 @@ export function EMDRProcessor() {
           <line x1="3" y1="18" x2="21" y2="18"></line>
         </svg>
       </button>
-      
-      {/* Main Upload Button (always visible) */}
-      <div className="fixed bottom-6 right-6 z-10">
-        <label className="bg-green-600 hover:bg-green-500 text-white rounded-full p-4 shadow-lg flex items-center justify-center cursor-pointer transform hover:scale-105 transition-transform duration-200" aria-label="Upload Music">
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-            <polyline points="17 8 12 3 7 8"></polyline>
-            <line x1="12" y1="3" x2="12" y2="15"></line>
-          </svg>
-          <input 
-            ref={mainFileInputRef}
-            type="file" 
-            accept="audio/*" 
-            className="hidden" 
-            onChange={handleFileUpload}
-          />
-        </label>
-        
-        {/* Upload Tip */}
-        {showUploadTip && (
-          <div className="absolute bottom-16 right-0 bg-white text-black p-3 rounded-lg shadow-lg text-sm w-48 animate-pulse">
-            Click here to upload your music!
-            <div className="absolute -bottom-2 right-6 w-0 h-0 border-l-8 border-l-transparent border-t-8 border-t-white border-r-8 border-r-transparent"></div>
-          </div>
-        )}
-      </div>
 
       {/* Sliding Menu */}
       <div 
@@ -278,7 +236,21 @@ export function EMDRProcessor() {
         
         {/* Audio Files Section */}
         <div className="mb-6">
-          <h3 className="text-xl font-bold mb-4 text-white">Your Song Library ({audioFiles.length})</h3>
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-xl font-bold text-white">Your Song Library ({audioFiles.length})</h3>
+            <button 
+              onClick={selectMusicFolder}
+              className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded flex items-center"
+            >
+              {folderPath ? 'Change Folder' : 'Select Folder'}
+            </button>
+          </div>
+          
+          {folderPath && (
+            <div className="bg-gray-800 text-white p-2 rounded mb-2 text-xs truncate">
+              <span className="font-semibold">Current folder:</span> {folderPath}
+            </div>
+          )}
           
           <div className="bg-white rounded-lg overflow-hidden">
             {audioFiles.length > 0 ? (
@@ -291,11 +263,12 @@ export function EMDRProcessor() {
                   <div>
                     <div className="font-medium">{file.name}</div>
                     <div className="text-xs text-gray-500">Last used: {file.lastUsed}</div>
+                    {file.path && <div className="text-xs text-gray-400 truncate max-w-xs">{file.path}</div>}
                   </div>
                   <button 
                     className="text-red-500 hover:text-red-700" 
                     onClick={(e) => deleteAudioFile(file.id, e)}
-                    aria-label={`Delete ${file.name}`}
+                    aria-label={`Remove ${file.name} from library`}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <polyline points="3 6 5 6 21 6"></polyline>
@@ -306,28 +279,18 @@ export function EMDRProcessor() {
               ))
             ) : (
               <div className="p-4 text-center text-gray-500">
-                No audio files available. Upload some music!
+                {folderPath 
+                  ? "No audio files found in the selected folder. Try selecting a different folder." 
+                  : "Select a folder containing your audio files."}
               </div>
             )}
           </div>
           
-          {/* Upload Button in Menu */}
-          <div className="mt-4">
-            <label className="bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-4 rounded w-full flex items-center justify-center cursor-pointer">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                <polyline points="17 8 12 3 7 8"></polyline>
-                <line x1="12" y1="3" x2="12" y2="15"></line>
-              </svg>
-              Upload Music
-              <input 
-                ref={fileInputRef}
-                type="file" 
-                accept="audio/*" 
-                className="hidden" 
-                onChange={handleFileUpload}
-              />
-            </label>
+          <div className="mt-4 text-white text-sm">
+            <p>
+              <strong>Note:</strong> This is a mock implementation to demonstrate the concept. In a real app, 
+              your music would be loaded directly from the file system.
+            </p>
           </div>
         </div>
         
@@ -346,7 +309,7 @@ export function EMDRProcessor() {
             <h3 className="font-bold mb-2">Beat-Sync Panner</h3>
             <ul className="text-sm space-y-1 list-disc pl-4">
               <li>Syncs panning with music beats</li>
-              <li>Upload your favorite songs</li>
+              <li>Use music from your filesystem</li>
               <li>Automatic BPM detection</li>
               <li>Perfect for rhythmic processing</li>
             </ul>
@@ -364,11 +327,11 @@ export function EMDRProcessor() {
       </div>
       
       {/* Audio Player Controls */}
-      {selectedAudio && (
+      {selectedAudio ? (
         <div className="mb-6 bg-gray-800 p-4 rounded-lg w-full max-w-2xl flex items-center justify-between">
           <div className="text-white">
             <div className="font-medium">{selectedAudio.name}</div>
-            <div className="text-xs text-gray-400">Selected from library</div>
+            <div className="text-xs text-gray-400">From: {selectedAudio.path || "Library"}</div>
           </div>
           
           <button
@@ -386,6 +349,18 @@ export function EMDRProcessor() {
                 <polygon points="5 3 19 12 5 21 5 3"></polygon>
               </svg>
             )}
+          </button>
+        </div>
+      ) : (
+        <div className="mb-6 w-full max-w-2xl">
+          <button 
+            onClick={selectMusicFolder}
+            className="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 px-6 rounded-lg flex items-center justify-center"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+            </svg>
+            {folderPath ? 'Select a Different Music Folder' : 'Select Your Music Folder'}
           </button>
         </div>
       )}

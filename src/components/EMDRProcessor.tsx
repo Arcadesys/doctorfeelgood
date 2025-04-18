@@ -7,17 +7,54 @@ type AudioFile = {
   id: string;
   name: string;
   lastUsed: string;
+  url?: string; // For locally stored files
+  data?: string; // For base64 encoded audio data
 };
 
 export function EMDRProcessor() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [selectedAudio, setSelectedAudio] = useState<AudioFile | null>(null);
-  const [audioFiles, setAudioFiles] = useState<AudioFile[]>([
-    { id: '1', name: 'Outer Wilds.m4a', lastUsed: '4/18/2025 08:51 AM' }
-  ]);
+  const [audioFiles, setAudioFiles] = useState<AudioFile[]>([]);
+  const [isPlaying, setIsPlaying] = useState(false);
+  
   const menuRef = useRef<HTMLDivElement>(null);
   const menuOpenSoundRef = useRef<HTMLAudioElement>(null);
   const menuCloseSoundRef = useRef<HTMLAudioElement>(null);
+  const audioPlayerRef = useRef<HTMLAudioElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Load audio files from localStorage on component mount
+  useEffect(() => {
+    const storedFiles = localStorage.getItem('audioFiles');
+    if (storedFiles) {
+      setAudioFiles(JSON.parse(storedFiles));
+    } else {
+      // Default sample file
+      const defaultFiles = [
+        { id: '1', name: 'Outer Wilds.m4a', lastUsed: '4/18/2025 08:51 AM' }
+      ];
+      setAudioFiles(defaultFiles);
+      localStorage.setItem('audioFiles', JSON.stringify(defaultFiles));
+    }
+    
+    // Load last selected audio
+    const lastSelectedAudio = localStorage.getItem('selectedAudio');
+    if (lastSelectedAudio) {
+      setSelectedAudio(JSON.parse(lastSelectedAudio));
+    }
+  }, []);
+  
+  // Save audio files to localStorage when they change
+  useEffect(() => {
+    localStorage.setItem('audioFiles', JSON.stringify(audioFiles));
+  }, [audioFiles]);
+  
+  // Save selected audio to localStorage when it changes
+  useEffect(() => {
+    if (selectedAudio) {
+      localStorage.setItem('selectedAudio', JSON.stringify(selectedAudio));
+    }
+  }, [selectedAudio]);
   
   // Handle menu open/close with sound effects
   const toggleMenu = () => {
@@ -46,26 +83,117 @@ export function EMDRProcessor() {
     };
   }, [isMenuOpen]);
   
-  // Handle audio file selection
+  // Handle audio file selection and playback
   const selectAudioFile = (file: AudioFile) => {
     setSelectedAudio(file);
-    // Play a selection sound if you want
+    
+    // Play the selected audio if it has data
+    if (file.data && audioPlayerRef.current) {
+      audioPlayerRef.current.src = file.data;
+      audioPlayerRef.current.play()
+        .then(() => setIsPlaying(true))
+        .catch(error => console.error("Error playing audio:", error));
+    } else if (file.url && audioPlayerRef.current) {
+      audioPlayerRef.current.src = file.url;
+      audioPlayerRef.current.play()
+        .then(() => setIsPlaying(true))
+        .catch(error => console.error("Error playing audio:", error));
+    }
+    
+    // Update last used timestamp
+    const now = new Date();
+    const formattedDate = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()} ${now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
+    
+    const updatedFiles = audioFiles.map(f => 
+      f.id === file.id ? {...f, lastUsed: formattedDate} : f
+    );
+    
+    setAudioFiles(updatedFiles);
+  };
+  
+  // Handle audio playback controls
+  const togglePlayPause = () => {
+    if (!selectedAudio || !audioPlayerRef.current) return;
+    
+    if (isPlaying) {
+      audioPlayerRef.current.pause();
+    } else {
+      audioPlayerRef.current.play()
+        .catch(error => console.error("Error playing audio:", error));
+    }
+    
+    setIsPlaying(!isPlaying);
   };
   
   // Handle audio file deletion
   const deleteAudioFile = (id: string, e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent selecting the file when clicking delete
+    
+    // Stop playback if the deleted file is currently playing
+    if (selectedAudio?.id === id && isPlaying && audioPlayerRef.current) {
+      audioPlayerRef.current.pause();
+      setIsPlaying(false);
+    }
+    
+    // Remove the file from state
     setAudioFiles(audioFiles.filter(file => file.id !== id));
+    
+    // Clear selected audio if it's the one being deleted
     if (selectedAudio?.id === id) {
       setSelectedAudio(null);
+      localStorage.removeItem('selectedAudio');
+    }
+  };
+  
+  // Handle file upload
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    
+    const file = files[0];
+    const reader = new FileReader();
+    
+    reader.onload = (event) => {
+      if (event.target && event.target.result) {
+        // Create a new audio file entry
+        const newFile: AudioFile = {
+          id: Date.now().toString(),
+          name: file.name,
+          lastUsed: new Date().toLocaleString(),
+          data: event.target.result as string
+        };
+        
+        // Add to audio files list
+        const updatedFiles = [...audioFiles, newFile];
+        setAudioFiles(updatedFiles);
+        
+        // Select the newly uploaded file
+        selectAudioFile(newFile);
+        
+        // Play a success sound
+        const successSound = new Audio('/sounds/upload-success.mp3');
+        successSound.play().catch(e => console.log('Could not play success sound', e));
+      }
+    };
+    
+    reader.readAsDataURL(file);
+    
+    // Reset the file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
     }
   };
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-black p-4 relative">
-      {/* Audio elements for sound effects */}
+      {/* Audio elements for sound effects and playback */}
       <audio ref={menuOpenSoundRef} src="/sounds/menu-open.mp3" preload="auto" />
       <audio ref={menuCloseSoundRef} src="/sounds/menu-close.mp3" preload="auto" />
+      <audio 
+        ref={audioPlayerRef}
+        onEnded={() => setIsPlaying(false)}
+        onError={() => setIsPlaying(false)}
+      />
       
       {/* Hamburger Menu Button */}
       <button 
@@ -108,28 +236,34 @@ export function EMDRProcessor() {
           <h3 className="text-xl font-bold mb-4 text-white">Your Song Library ({audioFiles.length})</h3>
           
           <div className="bg-white rounded-lg overflow-hidden">
-            {audioFiles.map(file => (
-              <div 
-                key={file.id}
-                className={`p-4 border-b border-gray-200 cursor-pointer flex justify-between items-center ${selectedAudio?.id === file.id ? 'bg-blue-50' : ''}`}
-                onClick={() => selectAudioFile(file)}
-              >
-                <div>
-                  <div className="font-medium">{file.name}</div>
-                  <div className="text-xs text-gray-500">Last used: {file.lastUsed}</div>
-                </div>
-                <button 
-                  className="text-red-500 hover:text-red-700" 
-                  onClick={(e) => deleteAudioFile(file.id, e)}
-                  aria-label={`Delete ${file.name}`}
+            {audioFiles.length > 0 ? (
+              audioFiles.map(file => (
+                <div 
+                  key={file.id}
+                  className={`p-4 border-b border-gray-200 cursor-pointer flex justify-between items-center ${selectedAudio?.id === file.id ? 'bg-blue-50' : ''}`}
+                  onClick={() => selectAudioFile(file)}
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="3 6 5 6 21 6"></polyline>
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                  </svg>
-                </button>
+                  <div>
+                    <div className="font-medium">{file.name}</div>
+                    <div className="text-xs text-gray-500">Last used: {file.lastUsed}</div>
+                  </div>
+                  <button 
+                    className="text-red-500 hover:text-red-700" 
+                    onClick={(e) => deleteAudioFile(file.id, e)}
+                    aria-label={`Delete ${file.name}`}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="3 6 5 6 21 6"></polyline>
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    </svg>
+                  </button>
+                </div>
+              ))
+            ) : (
+              <div className="p-4 text-center text-gray-500">
+                No audio files available. Upload some music!
               </div>
-            ))}
+            )}
           </div>
           
           {/* Upload Button */}
@@ -141,7 +275,13 @@ export function EMDRProcessor() {
                 <line x1="12" y1="3" x2="12" y2="15"></line>
               </svg>
               Upload Music
-              <input type="file" accept="audio/*" className="hidden" />
+              <input 
+                ref={fileInputRef}
+                type="file" 
+                accept="audio/*" 
+                className="hidden" 
+                onChange={handleFileUpload}
+              />
             </label>
           </div>
         </div>
@@ -178,9 +318,36 @@ export function EMDRProcessor() {
         <p className="text-gray-500">Visual target will appear here</p>
       </div>
       
+      {/* Audio Player Controls */}
+      {selectedAudio && (
+        <div className="mb-6 bg-gray-800 p-4 rounded-lg w-full max-w-2xl flex items-center justify-between">
+          <div className="text-white">
+            <div className="font-medium">{selectedAudio.name}</div>
+            <div className="text-xs text-gray-400">Selected from library</div>
+          </div>
+          
+          <button
+            onClick={togglePlayPause}
+            className="bg-blue-600 hover:bg-blue-500 text-white rounded-full p-3"
+            aria-label={isPlaying ? "Pause" : "Play"}
+          >
+            {isPlaying ? (
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="6" y="4" width="4" height="16"></rect>
+                <rect x="14" y="4" width="4" height="16"></rect>
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+              </svg>
+            )}
+          </button>
+        </div>
+      )}
+      
       <p className="text-white text-center text-sm">
         Use the menu in the top right to select your preferred EMDR mode
-        {selectedAudio && <span> | Playing: {selectedAudio.name}</span>}
+        {selectedAudio && isPlaying && <span> | Now playing: {selectedAudio.name}</span>}
       </p>
     </div>
   );

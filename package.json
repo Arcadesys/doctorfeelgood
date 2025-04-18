@@ -9,8 +9,9 @@
     "lint": "next lint",
     "audio:generate": "node scripts/generate-all-audio.js",
     "prebuild": "npm run audio:generate",
-    "test": "jest",
-    "test:watch": "jest --watch"
+    "test": "jest --verbose",
+    "test:watch": "jest --watch --verbose",
+    "setup-tests": "npm install --legacy-peer-deps"
   },
   "dependencies": {
     "framer-motion": "^12.7.4",

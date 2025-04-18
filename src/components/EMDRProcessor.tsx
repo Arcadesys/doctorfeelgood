@@ -1184,6 +1184,138 @@ export function EMDRProcessor() {
                 </p>
               </div>
               
+              {/* Audio File Management */}
+              <div className="mb-4">
+                <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Your Audio Files</h4>
+                
+                {/* Upload New Audio */}
+                <div className="mb-4">
+                  <label className={`flex items-center justify-center p-3 border-2 border-dashed ${isDarkMode ? 'border-gray-600 hover:border-gray-500' : 'border-gray-300 hover:border-gray-400'} rounded-lg cursor-pointer transition-colors`}>
+                    <input 
+                      type="file" 
+                      accept="audio/*" 
+                      className="sr-only"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          // Create a unique ID for the file
+                          const newId = generateMD5Hash(file.name + new Date().toISOString());
+                          
+                          // Create an object URL (this would normally save to server in a real app)
+                          const objectUrl = URL.createObjectURL(file);
+                          
+                          // Create new audio file entry
+                          const newAudio: AudioFile = {
+                            id: newId,
+                            name: file.name,
+                            lastUsed: new Date().toLocaleString(),
+                            path: objectUrl
+                          };
+                          
+                          // Add to list and select
+                          setAudioFiles(prev => [...prev, newAudio]);
+                          setSelectedAudio(newAudio);
+                          
+                          // Update audio track config
+                          setAudioTrackConfig(prev => ({
+                            ...prev,
+                            filePath: objectUrl
+                          }));
+                          
+                          // Clear the input value
+                          e.target.value = '';
+                        }
+                      }}
+                    />
+                    <div className="text-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" className={`mx-auto h-8 w-8 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                      </svg>
+                      <span className={`mt-2 block text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                        Upload audio file
+                      </span>
+                    </div>
+                  </label>
+                </div>
+                
+                {/* Audio Files List */}
+                <div className={`rounded-lg overflow-hidden mb-2 ${audioFiles.length === 0 ? 'hidden' : 'block'}`}>
+                  <div className={`max-h-48 overflow-y-auto`}>
+                    {audioFiles.map(file => (
+                      <div 
+                        key={file.id}
+                        className={`flex items-center justify-between p-3 ${
+                          selectedAudio?.id === file.id 
+                            ? 'bg-blue-600 text-white' 
+                            : isDarkMode 
+                              ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' 
+                              : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+                        } border-b ${isDarkMode ? 'border-gray-600' : 'border-gray-200'} cursor-pointer`}
+                        onClick={() => {
+                          setSelectedAudio(file);
+                          // Update audio track config with the file path
+                          setAudioTrackConfig(prev => ({
+                            ...prev,
+                            filePath: file.path || '/audio/sine-440hz.mp3'
+                          }));
+                        }}
+                      >
+                        <div className="flex items-center overflow-hidden">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                          </svg>
+                          <span className="truncate">{file.name}</span>
+                        </div>
+                        <button 
+                          className={`ml-2 p-1 rounded-full ${
+                            selectedAudio?.id === file.id 
+                              ? 'hover:bg-blue-700' 
+                              : isDarkMode 
+                                ? 'hover:bg-gray-500' 
+                                : 'hover:bg-gray-300'
+                          }`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteAudioFile(file.id, e as React.MouseEvent);
+                            
+                            // If the deleted file was selected for the audio track, reset
+                            if (selectedAudio?.id === file.id) {
+                              // Find another file to use as default, or use the built-in sine wave
+                              const nextFile = audioFiles.find(f => f.id !== file.id);
+                              if (nextFile) {
+                                setAudioTrackConfig(prev => ({
+                                  ...prev,
+                                  filePath: nextFile.path || '/audio/sine-440hz.mp3'
+                                }));
+                              } else {
+                                setAudioTrackConfig(prev => ({
+                                  ...prev,
+                                  filePath: '/audio/sine-440hz.mp3'
+                                }));
+                              }
+                            }
+                          }}
+                          aria-label={`Delete ${file.name}`}
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                
+                {audioFiles.length === 0 && (
+                  <div className={`p-4 text-center rounded-lg ${isDarkMode ? 'bg-gray-700 text-gray-400' : 'bg-gray-100 text-gray-600'} italic`}>
+                    No audio files yet. Upload your first file!
+                  </div>
+                )}
+              </div>
+              
+              {/* Audio Playback Controls */}
+              <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Playback Settings</h4>
+              
               <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Loop Audio</h4>
               <div className="flex items-center justify-between mb-4">
                 <span className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>Repeat track when finished</span>
@@ -1215,56 +1347,94 @@ export function EMDRProcessor() {
                 className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer mb-4`}
                 aria-label="Audio track volume"
               />
+              
+              {/* Test/preview button */}
+              <button
+                className={`w-full ${
+                  isDarkMode 
+                    ? 'bg-blue-600 hover:bg-blue-500 text-white' 
+                    : 'bg-blue-500 hover:bg-blue-400 text-white'
+                } py-2 px-4 rounded-lg flex items-center justify-center`}
+                onClick={() => {
+                  // Preview the audio without starting the animation
+                  if (audioPlayerRef.current) {
+                    audioPlayerRef.current.src = audioTrackConfig.filePath;
+                    audioPlayerRef.current.volume = audioTrackConfig.volume;
+                    audioPlayerRef.current.loop = false; // Just a preview
+                    
+                    // Play a short preview
+                    audioPlayerRef.current.currentTime = 0;
+                    audioPlayerRef.current.play()
+                      .then(() => {
+                        // Set a timeout to stop after 5 seconds
+                        setTimeout(() => {
+                          if (audioPlayerRef.current && !isPlaying) {
+                            audioPlayerRef.current.pause();
+                          }
+                        }, 5000);
+                      })
+                      .catch(err => console.error("Preview error:", err));
+                  }
+                }}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Preview (5s)
+              </button>
             </div>
           </div>
         )}
         
-        {/* Audio Selection Section */}
-        <div className="mb-6">
-          <h3 className="text-xl font-bold text-white dark:text-white text-gray-800 mb-4">Audio Selection</h3>
-          
-          {/* Upload Audio */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
-            <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Upload Your Audio</h4>
-            <input 
-              type="file" 
-              accept="audio/*"
-              className={`w-full text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-500'} file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold ${isDarkMode ? 'file:bg-blue-900 file:text-blue-200' : 'file:bg-blue-50 file:text-blue-700'} ${isDarkMode ? 'hover:file:bg-blue-800' : 'hover:file:bg-blue-100'}`}
-            />
+        {/* Only show audio selection section in Audio Track mode */}
+        {audioMode !== 'audioTrack' && (
+          <div className="mb-6">
+            <h3 className="text-xl font-bold text-white dark:text-white text-gray-800 mb-4">Audio Selection</h3>
             
-            <button 
-              className={`w-full mt-3 ${isDarkMode ? 'bg-blue-900 hover:bg-blue-800 text-blue-200' : 'bg-blue-100 hover:bg-blue-200 text-blue-800'} py-2 px-4 rounded flex items-center justify-center`}
-              onClick={() => {}}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2">
-                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
-              </svg>
-              Show Your Song Library (0)
-            </button>
-          </div>
-          
-          {/* Sample Audio */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
-            <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Sample Audio</h4>
-            <div className="grid grid-cols-2 gap-2">
-              <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-3 rounded text-sm text-left ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                White noise for focus and relaxation
-              </button>
-              <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-3 rounded text-sm text-left ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                Clean 440Hz sine wave tone
-              </button>
-              <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-3 rounded text-sm text-left ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                Deeper 220Hz sine wave tone
-              </button>
-              <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-3 rounded text-sm text-left ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                Soft triangle wave for gentle stimulation
-              </button>
-              <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-3 rounded text-sm text-left ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                Gentle pink noise for relaxation
+            {/* Upload Audio */}
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
+              <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Upload Your Audio</h4>
+              <input 
+                type="file" 
+                accept="audio/*"
+                className={`w-full text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-500'} file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold ${isDarkMode ? 'file:bg-blue-900 file:text-blue-200' : 'file:bg-blue-50 file:text-blue-700'} ${isDarkMode ? 'hover:file:bg-blue-800' : 'hover:file:bg-blue-100'}`}
+              />
+              
+              <button 
+                className={`w-full mt-3 ${isDarkMode ? 'bg-blue-900 hover:bg-blue-800 text-blue-200' : 'bg-blue-100 hover:bg-blue-200 text-blue-800'} py-2 px-4 rounded flex items-center justify-center`}
+                onClick={() => {}}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2">
+                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                </svg>
+                Show Your Song Library ({audioFiles.length})
               </button>
             </div>
+            
+            {/* Sample Audio */}
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
+              <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Sample Audio</h4>
+              <div className="grid grid-cols-2 gap-2">
+                <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-3 rounded text-sm text-left ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
+                  White noise for focus and relaxation
+                </button>
+                <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-3 rounded text-sm text-left ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
+                  Clean 440Hz sine wave tone
+                </button>
+                <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-3 rounded text-sm text-left ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
+                  Deeper 220Hz sine wave tone
+                </button>
+                <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-3 rounded text-sm text-left ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
+                  Soft triangle wave for gentle stimulation
+                </button>
+                <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-3 rounded text-sm text-left ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
+                  Gentle pink noise for relaxation
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
+        )}
         
         {/* Session Controls */}
         <div className="mb-6">

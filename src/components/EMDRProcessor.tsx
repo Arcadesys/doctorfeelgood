@@ -102,14 +102,54 @@ export function EMDRProcessor() {
       setIsLoadingYoutube(true);
       setYoutubeError('');
       
+      // Try direct embedding first for YouTube URLs
+      if (youtubeUrl.includes('youtube.com/watch') || youtubeUrl.includes('youtu.be/')) {
+        console.log('Attempting direct YouTube embedding...');
+        
+        // Extract video ID from URL
+        let videoId = '';
+        if (youtubeUrl.includes('youtube.com/watch')) {
+          const url = new URL(youtubeUrl);
+          videoId = url.searchParams.get('v') || '';
+        } else if (youtubeUrl.includes('youtu.be/')) {
+          videoId = youtubeUrl.split('/').pop() || '';
+        }
+        
+        if (!videoId) {
+          throw new Error('Could not extract YouTube video ID');
+        }
+        
+        console.log('Using direct YouTube embed for video ID:', videoId);
+        
+        try {
+          // Create audio processor with direct YouTube URL
+          const processor = await createYouTubeAudioProcessor(
+            `https://www.youtube.com/watch?v=${videoId}`, 
+            `YouTube Video (${videoId})`
+          );
+          
+          setYoutubeTitle(`YouTube Audio (${videoId})`);
+          setYoutubeAudio(processor);
+          setYoutubeEnabled(true);
+          return true;
+        } catch (directError) {
+          console.error('Direct embed failed, falling back to API:', directError);
+          // Continue to API approach below
+        }
+      }
+      
       // Call our API route
+      console.log('Fetching YouTube info via API route...');
       const response = await fetch(`/api/youtube?url=${encodeURIComponent(youtubeUrl)}`);
+      
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to fetch YouTube audio');
+        console.error('API route error:', errorData);
+        throw new Error(errorData.error || errorData.details || 'Failed to fetch YouTube audio');
       }
       
       const data = await response.json();
+      console.log('API returned data:', data);
       
       if (!data.formats || data.formats.length === 0) {
         throw new Error('No audio formats available for this video');
@@ -117,6 +157,7 @@ export function EMDRProcessor() {
       
       // Find best audio format (highest bitrate)
       const bestFormat = data.formats.sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0))[0];
+      console.log('Selected audio format:', bestFormat);
       
       // Create audio processor
       const processor = await createYouTubeAudioProcessor(bestFormat.url, data.title);
@@ -128,6 +169,11 @@ export function EMDRProcessor() {
     } catch (error) {
       console.error('Error fetching YouTube audio:', error);
       setYoutubeError(error instanceof Error ? error.message : 'Failed to load YouTube audio');
+      
+      // Show detailed error to help debugging
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      alert(`YouTube Error: ${errorMessage}\n\nYouTube may be blocking access to this video. Try a different video or check console for details.`);
+      
       return false;
     } finally {
       setIsLoadingYoutube(false);
@@ -165,151 +211,122 @@ export function EMDRProcessor() {
   useEffect(() => {
     if (!isActive || !containerRef.current) return;
     
-    let animationFrameId: number;
-    let lastTimestamp: number;
-    let frameSkipCounter = 0;
-    const FRAMES_TO_SKIP = 5; // Only update position every 6 frames (at 60fps this is ~10 updates per second)
-    
-    // Get viewport dimensions (using window dimensions for full viewport)
+    // Get viewport dimensions
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
     
-    // Half size for collision detection
-    const halfSize = size / 2;
+    // Initial position - center
+    setPosition({
+      x: viewportWidth / 2,
+      y: viewportHeight / 2
+    });
     
-    // Physics constants
-    const friction = 0.995; // Slight friction to maintain energy
-    const speedFactor = 0.1; // Fixed very low speed factor
+    // Define fixed positions for smooth movement, with wider range
+    const positions = [
+      { x: viewportWidth * 0.1, y: viewportHeight / 2 },   // Far left
+      { x: viewportWidth * 0.5, y: viewportHeight / 2 },   // Center
+      { x: viewportWidth * 0.9, y: viewportHeight / 2 },   // Far right
+      { x: viewportWidth * 0.5, y: viewportHeight / 2 },   // Center
+    ];
     
-    const animate = (timestamp: number) => {
-      if (!lastTimestamp) lastTimestamp = timestamp;
-      const deltaTime = timestamp - lastTimestamp;
-      lastTimestamp = timestamp;
+    let positionIndex = 0;
+    let playedSound = false;
+    let isTransitioning = false;
+    
+    // Create an interval that triggers transitions between positions
+    const interval = setInterval(() => {
+      if (isTransitioning) return; // Skip if already in transition
       
-      // Skip frames to slow down movement
-      frameSkipCounter = (frameSkipCounter + 1) % FRAMES_TO_SKIP;
-      if (frameSkipCounter !== 0) {
-        // Skip this frame for position update
-        animationFrameId = requestAnimationFrame(animate);
-        return;
+      // Set the next position index
+      positionIndex = (positionIndex + 1) % positions.length;
+      const nextPosition = positions[positionIndex];
+      
+      // Start transition
+      isTransitioning = true;
+      
+      // Play sound at extremes (positions 0 and 2)
+      if (soundEnabled && sound && !youtubeEnabled) {
+        if (positionIndex === 0) {
+          sound.playTone('C4', soundVolume);
+        } else if (positionIndex === 2) {
+          sound.playTone('G4', soundVolume);
+        }
       }
       
-      // Update position based on velocity
-      const newPos = {
-        x: position.x + velocity.x * speedFactor * (deltaTime / 16),
-        y: position.y + velocity.y * speedFactor * (deltaTime / 16)
+      // Change color if enabled and at extreme positions
+      if (autoChangeColors && (positionIndex === 0 || positionIndex === 2)) {
+        setSelectedColor(COLORS[Math.floor(Math.random() * COLORS.length)].value);
+      }
+      
+      // Create smooth transition
+      const startPosition = { ...position };
+      const startTime = Date.now();
+      const duration = Math.max(500, speed); // Transition duration in ms
+      
+      // Create animation function
+      const animate = () => {
+        const elapsed = Date.now() - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        
+        // Easing function for smooth transition (ease-in-out)
+        const eased = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+        
+        // Calculate current position
+        const currentX = startPosition.x + (nextPosition.x - startPosition.x) * eased;
+        const currentY = startPosition.y + (nextPosition.y - startPosition.y) * eased;
+        
+        // Update position
+        setPosition({
+          x: currentX,
+          y: currentY
+        });
+        
+        // Update panner for YouTube audio - full -1 to 1 range
+        if (youtubeAudio && youtubeEnabled) {
+          // Map x position to panner value (-1 to 1)
+          // Adjusted mapping to use the full range
+          const normalizedPosition = (currentX - (viewportWidth * 0.1)) / (viewportWidth * 0.8);
+          const panValue = (normalizedPosition * 2) - 1;
+          youtubeAudio.setPan(Math.max(-1, Math.min(1, panValue)));
+        }
+        
+        // Continue animation if not complete
+        if (progress < 1) {
+          requestAnimationFrame(animate);
+        } else {
+          isTransitioning = false;
+        }
       };
       
-      // Calculate boundaries
-      const maxX = viewportWidth - halfSize;
-      const maxY = viewportHeight - halfSize;
-      const minX = halfSize;
-      const minY = halfSize;
+      // Start animation
+      requestAnimationFrame(animate);
       
-      // Check for collisions with viewport edges
-      let newVelX = velocity.x;
-      let newVelY = velocity.y;
-      let playedSound = false;
-      
-      if (newPos.x > maxX) {
-        newPos.x = maxX;
-        newVelX = -Math.abs(velocity.x) * friction;
-        if (soundEnabled && sound && !youtubeEnabled) {
-          sound.playTone('G4', soundVolume);
-          playedSound = true;
-        }
-        if (autoChangeColors) {
-          setSelectedColor(COLORS[Math.floor(Math.random() * COLORS.length)].value);
-        }
-      } else if (newPos.x < minX) {
-        newPos.x = minX;
-        newVelX = Math.abs(velocity.x) * friction;
-        if (soundEnabled && sound && !youtubeEnabled && !playedSound) {
-          sound.playTone('C4', soundVolume);
-          playedSound = true;
-        }
-        if (autoChangeColors) {
-          setSelectedColor(COLORS[Math.floor(Math.random() * COLORS.length)].value);
-        }
-      }
-      
-      if (newPos.y > maxY) {
-        newPos.y = maxY;
-        newVelY = -Math.abs(velocity.y) * friction;
-        if (soundEnabled && sound && !youtubeEnabled && !playedSound) {
-          sound.playTone('A4', soundVolume);
-          playedSound = true;
-        }
-        if (autoChangeColors) {
-          setSelectedColor(COLORS[Math.floor(Math.random() * COLORS.length)].value);
-        }
-      } else if (newPos.y < minY) {
-        newPos.y = minY;
-        newVelY = Math.abs(velocity.y) * friction;
-        if (soundEnabled && sound && !youtubeEnabled && !playedSound) {
-          sound.playTone('E4', soundVolume);
-          playedSound = true;
-        }
-        if (autoChangeColors) {
-          setSelectedColor(COLORS[Math.floor(Math.random() * COLORS.length)].value);
-        }
-      }
-      
-      // Update YouTube audio panner based on position
-      if (youtubeAudio && youtubeEnabled) {
-        // Map x position to panner value (-1 to 1)
-        const panValue = ((newPos.x / viewportWidth) * 2) - 1;
-        youtubeAudio.setPan(panValue);
-      }
-      
-      // Update state
-      setPosition(newPos);
-      setVelocity({ x: newVelX, y: newVelY });
-      
-      // Continue animation
-      animationFrameId = requestAnimationFrame(animate);
-    };
-    
-    // Start animation
-    animationFrameId = requestAnimationFrame(animate);
-    
-    // Initialize with a fixed very low velocity
-    setVelocity({
-      x: (Math.random() > 0.5 ? 1 : -1) * 0.2,
-      y: (Math.random() > 0.5 ? 1 : -1) * 0.2
-    });
-    
-    // Initialize with a random starting position
-    setPosition({
-      x: Math.random() * (viewportWidth - size) + size/2,
-      y: Math.random() * (viewportHeight - size) + size/2
-    });
+    }, Math.max(1000, speed * 1.5)); // Wait time between movements
     
     // Handle window resize
     const handleResize = () => {
-      // Adjust position if necessary when window resizes
-      setPosition(prevPos => {
-        const updatedPos = { ...prevPos };
-        if (prevPos.x > window.innerWidth - halfSize) {
-          updatedPos.x = window.innerWidth - halfSize;
-        }
-        if (prevPos.y > window.innerHeight - halfSize) {
-          updatedPos.y = window.innerHeight - halfSize;
-        }
-        return updatedPos;
-      });
+      const newWidth = window.innerWidth;
+      const newHeight = window.innerHeight;
+      
+      // Update positions array for the new dimensions
+      positions[0].x = newWidth * 0.1;  // Far left
+      positions[0].y = newHeight / 2;
+      positions[1].x = newWidth * 0.5;  // Center
+      positions[1].y = newHeight / 2;
+      positions[2].x = newWidth * 0.9;  // Far right
+      positions[2].y = newHeight / 2;
+      positions[3].x = newWidth * 0.5;  // Center
+      positions[3].y = newHeight / 2;
     };
     
     window.addEventListener('resize', handleResize);
     
     return () => {
-      cancelAnimationFrame(animationFrameId);
+      clearInterval(interval);
       window.removeEventListener('resize', handleResize);
     };
   }, [
     isActive,
-    position,
-    velocity,
     size,
     speed,
     soundEnabled,
@@ -317,7 +334,8 @@ export function EMDRProcessor() {
     soundVolume,
     autoChangeColors,
     youtubeAudio,
-    youtubeEnabled
+    youtubeEnabled,
+    position // Added position as dependency since we use it in the animation
   ]);
 
   // Handle start/stop

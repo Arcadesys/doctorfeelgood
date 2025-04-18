@@ -2,10 +2,14 @@
 let audioContext: AudioContext | null = null;
 let audioContextInitialized = false;
 
+// Add debugging flag to help troubleshoot
+const DEBUG_AUDIO = true;
+
 export const getAudioContext = (): AudioContext => {
   if (!audioContext) {
     // Just create the context but don't start it yet
     audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    if (DEBUG_AUDIO) console.log('New AudioContext created with state:', audioContext.state);
   }
   return audioContext;
 };
@@ -17,13 +21,13 @@ export const resumeAudioContext = async (): Promise<void> => {
     try {
       await ctx.resume();
       audioContextInitialized = true;
-      console.log('AudioContext successfully resumed');
+      if (DEBUG_AUDIO) console.log('AudioContext successfully resumed');
     } catch (err) {
       console.error('Failed to resume AudioContext:', err);
     }
   } else {
     audioContextInitialized = true;
-    console.log('AudioContext already active:', ctx.state);
+    if (DEBUG_AUDIO) console.log('AudioContext already active:', ctx.state);
   }
 };
 
@@ -146,7 +150,25 @@ export const createAudioProcessor = async (
       // Create Web Audio nodes
       source = ctx.createMediaElementSource(audioElement);
       gainNode = ctx.createGain();
-      pannerNode = ctx.createStereoPanner();
+      
+      // Check if StereoPannerNode is supported
+      if (typeof ctx.createStereoPanner === 'function') {
+        pannerNode = ctx.createStereoPanner();
+        if (DEBUG_AUDIO) console.log('StereoPanner node created successfully');
+      } else {
+        // Fallback for browsers without StereoPannerNode
+        console.warn('StereoPannerNode not supported in this browser, using fallback');
+        // Create a dummy panner with the same interface
+        pannerNode = {
+          pan: { 
+            value: 0,
+            setValueAtTime: (v: number, t: number) => {},
+            linearRampToValueAtTime: (v: number, t: number) => {},
+            cancelScheduledValues: (t: number) => {}
+          },
+          connect: (node: any) => source.connect(node)
+        } as unknown as StereoPannerNode;
+      }
       
       // Connect the audio graph
       source.connect(pannerNode);
@@ -157,8 +179,14 @@ export const createAudioProcessor = async (
       pannerNode.pan.value = 0;
       gainNode.gain.value = 1.0;
       
+      // Force a small pan change to ensure the panner is active
+      // Some browsers need this "kick"
+      pannerNode.pan.setValueAtTime(-0.1, ctx.currentTime);
+      pannerNode.pan.setValueAtTime(0.1, ctx.currentTime + 0.05);
+      pannerNode.pan.setValueAtTime(0, ctx.currentTime + 0.1);
+      
       audioNodesInitialized = true;
-      console.log('Audio nodes initialized successfully');
+      if (DEBUG_AUDIO) console.log('Audio nodes initialized successfully');
     } catch (err) {
       console.error('Failed to initialize audio nodes:', err);
       // If initialization fails, we need to reconnect the audio element
@@ -220,6 +248,16 @@ export const createAudioProcessor = async (
           });
         
         isCurrentlyPlaying = true;
+        
+        // Test panner after successful playback
+        if (pannerNode) {
+          // Perform a quick ping-pong to ensure the panner is working
+          const now = ctx.currentTime;
+          pannerNode.pan.setValueAtTime(-0.5, now);
+          pannerNode.pan.setValueAtTime(0.5, now + 0.1);
+          pannerNode.pan.setValueAtTime(0, now + 0.2);
+          console.log('Ping-pong panner test performed');
+        }
       } catch (e) {
         console.error('Error playing audio:', e);
         
@@ -241,11 +279,38 @@ export const createAudioProcessor = async (
           
           console.log('Fallback audio player succeeded');
           
-          // Reset our audio nodes with the new element
-          audioNodesInitialized = false;
-          initAudioNodes().catch(err => 
-            console.error('Could not initialize nodes with fallback:', err)
-          );
+          // Create a new audio context and connect the fallback player
+          // This gives us a fresh chance to establish the panner
+          const fallbackCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+          try {
+            await fallbackCtx.resume();
+            
+            // Create new audio nodes for the fallback
+            const fallbackSource = fallbackCtx.createMediaElementSource(fallbackPlayer);
+            const fallbackGain = fallbackCtx.createGain();
+            const fallbackPanner = fallbackCtx.createStereoPanner();
+            
+            // Connect nodes
+            fallbackSource.connect(fallbackPanner);
+            fallbackPanner.connect(fallbackGain);
+            fallbackGain.connect(fallbackCtx.destination);
+            
+            // Update our references to use the new nodes
+            source = fallbackSource;
+            gainNode = fallbackGain;
+            pannerNode = fallbackPanner;
+            ctx = fallbackCtx;
+            
+            // Initialize with a ping-pong test
+            fallbackPanner.pan.setValueAtTime(-0.5, fallbackCtx.currentTime);
+            fallbackPanner.pan.setValueAtTime(0.5, fallbackCtx.currentTime + 0.1);
+            fallbackPanner.pan.setValueAtTime(0, fallbackCtx.currentTime + 0.2);
+            
+            audioNodesInitialized = true;
+            console.log('Fallback audio nodes successfully created');
+          } catch (nodeErr) {
+            console.error('Could not create fallback audio nodes:', nodeErr);
+          }
         } catch (fallbackErr) {
           console.error('Even fallback playback failed:', fallbackErr);
           throw e;
@@ -266,14 +331,51 @@ export const createAudioProcessor = async (
       }
     },
     setPan: (value: number) => {
-      if (pannerNode) {
+      if (!pannerNode) {
+        if (DEBUG_AUDIO) console.warn('Cannot set pan: panner node not available');
+        return;
+      }
+      
+      try {
         // Clamp value between -1 and 1
         const clampedValue = Math.max(-1, Math.min(1, value));
-        pannerNode.pan.value = clampedValue;
+        
+        // Use the automation API for smoother transitions
+        // and to ensure the value actually gets applied
+        const now = ctx.currentTime;
+        
+        // Apply with a slight ramp for smoother transition 
+        // (higher values = more noticeable change)
+        pannerNode.pan.cancelScheduledValues(now);
+        pannerNode.pan.setValueAtTime(pannerNode.pan.value, now);
+        pannerNode.pan.linearRampToValueAtTime(clampedValue, now + 0.05);
+        
+        // Log extreme values to verify panning is happening
+        if (Math.abs(clampedValue) > 0.9) {
+          if (DEBUG_AUDIO) console.log(`Setting extreme pan value: ${clampedValue}`);
+        }
+      } catch (error) {
+        console.error('Error setting pan value:', error);
+        // Try a direct approach as fallback
+        try {
+          pannerNode.pan.value = Math.max(-1, Math.min(1, value));
+        } catch (directError) {
+          console.error('Even direct pan setting failed:', directError);
+        }
       }
     },
     getCurrentPan: () => {
-      return pannerNode ? pannerNode.pan.value : 0;
+      if (!pannerNode) {
+        if (DEBUG_AUDIO) console.warn('Cannot get pan: panner node not available');
+        return 0;
+      }
+      
+      try {
+        return pannerNode.pan.value;
+      } catch (error) {
+        console.error('Error getting pan value:', error);
+        return 0;
+      }
     },
     setVolume: (value: number) => {
       // Convert dB to linear gain (value is in dB)

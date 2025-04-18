@@ -55,6 +55,15 @@ const setupSound = () => {
   return { playTone };
 };
 
+// Add interface for saved audio files
+interface SavedAudioFile {
+  id: string;
+  name: string;
+  url: string;
+  timestamp: number;
+  size: number;
+}
+
 export function EMDRProcessor() {
   // Refs for container dimensions
   const containerRef = useRef<HTMLDivElement>(null);
@@ -81,6 +90,11 @@ export function EMDRProcessor() {
   const [audioError, setAudioError] = useState('');
   const [audioProcessor, setAudioProcessor] = useState<AudioProcessor | null>(null);
   const [audioEnabled, setAudioEnabled] = useState(false);
+  const [audioPanningEnabled, setAudioPanningEnabled] = useState(true);
+  
+  // Target motion controls
+  const [targetMotionType, setTargetMotionType] = useState('auto'); // 'auto' or 'controlled'
+  const [motionAmplitude, setMotionAmplitude] = useState(80); // percentage of screen width
   
   // Sample audio integration
   const [sampleAudioId, setSampleAudioId] = useState('');
@@ -90,14 +104,133 @@ export function EMDRProcessor() {
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [velocity, setVelocity] = useState({ x: 5, y: 5 });
   
+  // Add state for saved audio files
+  const [savedAudioFiles, setSavedAudioFiles] = useState<SavedAudioFile[]>([]);
+  const [showSavedFiles, setShowSavedFiles] = useState(false);
+  
   // Initialize sound
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setSound(setupSound());
+      
+      // Initialize position to center of screen
+      setPosition({
+        x: window.innerWidth / 2,
+        y: window.innerHeight / 2
+      });
     }
   }, []);
   
-  // Function to load a user-uploaded audio file
+  // Load saved files from localStorage on component mount
+  useEffect(() => {
+    const loadSavedFiles = () => {
+      try {
+        const savedFilesJson = localStorage.getItem('emdr_saved_audio_files');
+        if (savedFilesJson) {
+          const files = JSON.parse(savedFilesJson) as SavedAudioFile[];
+          setSavedAudioFiles(files);
+          console.log(`Loaded ${files.length} saved audio files from localStorage`);
+        }
+      } catch (error) {
+        console.error('Error loading saved audio files:', error);
+      }
+    };
+    
+    loadSavedFiles();
+  }, []);
+  
+  // Function to save a file to localStorage
+  const saveAudioFile = (file: File, url: string) => {
+    try {
+      // Create a new saved file entry
+      const newSavedFile: SavedAudioFile = {
+        id: `file_${Date.now()}`,
+        name: file.name,
+        url: url,
+        timestamp: Date.now(),
+        size: file.size
+      };
+      
+      // Add to the saved files list
+      const updatedFiles = [...savedAudioFiles, newSavedFile];
+      setSavedAudioFiles(updatedFiles);
+      
+      // Save to localStorage
+      localStorage.setItem('emdr_saved_audio_files', JSON.stringify(updatedFiles));
+      
+      console.log(`Saved audio file to localStorage: ${file.name}`);
+      return true;
+    } catch (error) {
+      console.error('Error saving audio file to localStorage:', error);
+      return false;
+    }
+  };
+  
+  // Function to load a saved file
+  const loadSavedAudioFile = (savedFile: SavedAudioFile) => {
+    try {
+      setIsLoadingAudio(true);
+      setAudioError('');
+      
+      // Create a audio processor for the saved file
+      const simpleProcessor = createSimpleAudioProcessor(savedFile.url, savedFile.name);
+      
+      setAudioTitle(savedFile.name);
+      setAudioProcessor(simpleProcessor);
+      setAudioEnabled(true);
+      setUseSampleAudio(false);
+      
+      // Hide the saved files dialog
+      setShowSavedFiles(false);
+      
+      // Reset any uploaded file input
+      const fileInput = document.getElementById('audioFile') as HTMLInputElement;
+      if (fileInput) fileInput.value = '';
+      
+      setIsLoadingAudio(false);
+      return true;
+    } catch (error) {
+      console.error('Error loading saved audio file:', error);
+      setAudioError(`Failed to load saved file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setIsLoadingAudio(false);
+      return false;
+    }
+  };
+  
+  // Function to delete a saved file
+  const deleteSavedAudioFile = (id: string) => {
+    try {
+      // Filter out the file to delete
+      const updatedFiles = savedAudioFiles.filter(file => file.id !== id);
+      
+      // Update state
+      setSavedAudioFiles(updatedFiles);
+      
+      // Save updated list to localStorage
+      localStorage.setItem('emdr_saved_audio_files', JSON.stringify(updatedFiles));
+      
+      console.log(`Deleted saved audio file: ${id}`);
+      return true;
+    } catch (error) {
+      console.error('Error deleting saved audio file:', error);
+      return false;
+    }
+  };
+  
+  // Function to format file size
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+  
+  // Function to format date
+  const formatDate = (timestamp: number): string => {
+    const date = new Date(timestamp);
+    return date.toLocaleDateString();
+  };
+  
+  // Update the handleAudioFileUpload function to save to localStorage
   const handleAudioFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
@@ -109,46 +242,24 @@ export function EMDRProcessor() {
       setAudioError('');
       setAudioFile(file);
       
-      // Request audio permission if not already granted
-      if (!audioPermissionGranted) {
-        const granted = await requestAudioPermission();
-        // Continue even if not granted, as the user can try later
-      }
-      
       // Create object URL for the file
       const fileUrl = URL.createObjectURL(file);
       console.log(`Created URL for file: ${file.name}, size: ${file.size} bytes, type: ${file.type}`);
       
-      // For local files, check if they're valid audio
-      try {
-        const tempAudio = new Audio();
-        tempAudio.src = fileUrl;
-        
-        // Wait briefly to check if the file loads
-        await new Promise((resolve, reject) => {
-          tempAudio.onloadedmetadata = resolve;
-          tempAudio.onerror = () => reject(new Error("Couldn't load audio file. The file may be corrupted or in an unsupported format."));
-          
-          // Timeout after 3 seconds
-          setTimeout(() => resolve(null), 3000);
-        });
-      } catch (validationError) {
-        console.error("File validation error:", validationError);
-        setAudioError(validationError instanceof Error ? validationError.message : "Invalid audio file");
-        setIsLoadingAudio(false);
-        return false;
-      }
-      
-      // Create audio processor with the file
-      const processor = await createAudioProcessor(fileUrl, file.name);
-      
+      // Set the audio title and URL
       setAudioTitle(file.name);
-      setAudioProcessor(processor);
       setAudioEnabled(true);
       setUseSampleAudio(false);
       
+      // Create a new audio processor in the simplified way
+      const simpleProcessor = createSimpleAudioProcessor(fileUrl, file.name);
+      setAudioProcessor(simpleProcessor);
+      
       // Reset sample audio if it was previously used
       setSampleAudioId('');
+      
+      // Save the file to localStorage
+      saveAudioFile(file, fileUrl);
       
       return true;
     } catch (error) {
@@ -166,12 +277,6 @@ export function EMDRProcessor() {
       setIsLoadingAudio(true);
       setAudioError('');
       
-      // Request audio permission if not already granted
-      if (!audioPermissionGranted) {
-        const granted = await requestAudioPermission();
-        // Continue even if not granted, as the user can try later
-      }
-      
       // Get the sample audio file - either by ID or random
       const sampleAudio = id 
         ? sampleAudioFiles.find(audio => audio.id === id) || getRandomSampleAudio()
@@ -179,14 +284,11 @@ export function EMDRProcessor() {
       
       setSampleAudioId(sampleAudio.id);
       
-      // Create audio processor
-      const processor = await createAudioProcessor(
-        sampleAudio.url, 
-        sampleAudio.title
-      );
+      // Create a simple audio processor for the sample
+      const simpleProcessor = createSimpleAudioProcessor(sampleAudio.url, sampleAudio.title);
       
       setAudioTitle(sampleAudio.title);
-      setAudioProcessor(processor);
+      setAudioProcessor(simpleProcessor);
       setAudioEnabled(true);
       setUseSampleAudio(true);
       
@@ -246,7 +348,21 @@ export function EMDRProcessor() {
   
   // Physics-based animation
   useEffect(() => {
-    if (!isActive || !containerRef.current) return;
+    if (!containerRef.current) return;
+    
+    // Get viewport dimensions
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    
+    // Set initial position based on whether animation is active
+    if (!isActive) {
+      // When inactive, ensure target is centered
+      setPosition({
+        x: viewportWidth / 2,
+        y: viewportHeight / 2
+      });
+      return; // Exit early if not active
+    }
     
     console.log("Animation effect starting with audio enabled:", audioEnabled);
     
@@ -256,6 +372,22 @@ export function EMDRProcessor() {
         await resumeAudioContext();
         if (audioEnabled && audioProcessor) {
           console.log("Animation effect resuming audio context and playing audio");
+          
+          // First check if the audio processor has a functional panner
+          try {
+            // Test panner with extreme values
+            audioProcessor.setPan(-1);
+            await new Promise(resolve => setTimeout(resolve, 50));
+            audioProcessor.setPan(1);
+            await new Promise(resolve => setTimeout(resolve, 50));
+            audioProcessor.setPan(0);
+            console.log("Animation effect: panner test successful");
+          } catch (panError) {
+            console.warn("Animation effect: panner test failed, will use fallback:", panError);
+            // We'll continue anyway - the audioUtils fallback should handle this
+          }
+          
+          // Now try to play the audio
           await audioProcessor.play().catch(async (err) => {
             console.error("Failed to play audio, trying fallback:", err);
             
@@ -295,104 +427,121 @@ export function EMDRProcessor() {
     // Call immediately
     initAudio();
     
-    // Get viewport dimensions
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
+    // Calculate motion boundaries based on amplitude
+    const amplitude = motionAmplitude / 100; // Convert percentage to ratio (0-1)
+    const leftPosition = viewportWidth * (0.5 - amplitude/2); 
+    const rightPosition = viewportWidth * (0.5 + amplitude/2);
+    const centerPosition = viewportWidth * 0.5;
     
-    // Initial position - center
-    setPosition({
-      x: viewportWidth / 2,
-      y: viewportHeight / 2
-    });
+    // Set to true if we want audio pan values to control target position
+    const useAudioPanForPosition = targetMotionType === 'auto' && audioEnabled && audioProcessor;
     
-    // Whether we're using audio pan values to control position
-    const useAudioPan = audioEnabled && audioProcessor;
+    // Initialize position before animation starts to prevent flashing at 0,0
+    if (useAudioPanForPosition && audioProcessor) {
+      // If audio-controlled, set position based on current pan
+      const currentPan = audioProcessor.getCurrentPan();
+      const newX = centerPosition + (currentPan * (rightPosition - centerPosition));
+      setPosition({
+        x: newX,
+        y: viewportHeight / 2
+      });
+    } else {
+      // For controlled movement, start at center
+      setPosition({
+        x: centerPosition,
+        y: viewportHeight / 2
+      });
+    }
     
-    if (!useAudioPan) {
-      // TRADITIONAL MOVEMENT LOGIC - When not controlled by audio
-      // Define fixed positions for smooth movement, with wider range
-      const positions = [
-        { x: viewportWidth * 0.1, y: viewportHeight / 2 },   // Far left
-        { x: viewportWidth * 0.5, y: viewportHeight / 2 },   // Center
-        { x: viewportWidth * 0.9, y: viewportHeight / 2 },   // Far right
-        { x: viewportWidth * 0.5, y: viewportHeight / 2 },   // Center
-      ];
+    if (!useAudioPanForPosition) {
+      // CONTROLLED MOVEMENT LOGIC - Predictable motion with configurable parameters
+      // Define movement positions differently to create smooth continuous motion
+      const leftPoint = { x: leftPosition, y: viewportHeight / 2 };
+      const centerPoint = { x: centerPosition, y: viewportHeight / 2 };
+      const rightPoint = { x: rightPosition, y: viewportHeight / 2 };
       
-      let positionIndex = 0;
-      let playedSound = false;
-      let isTransitioning = false;
+      // Create smoother oscillation pattern
+      let startTime = Date.now();
+      let animationFrameId: number;
+      let lastX = position.x;
       
-      // Create an interval that triggers transitions between positions
-      const interval = setInterval(() => {
-        if (isTransitioning) return; // Skip if already in transition
+      // Use sine wave for smoother oscillation
+      const animate = () => {
+        const elapsed = Date.now() - startTime;
+        // Convert speed from ms for full cycle to oscillation frequency
+        const frequency = 1000 / speed;
+        // Calculate position using sine wave, ranging from -1 to 1
+        const oscillation = Math.sin(elapsed * frequency * Math.PI / 1000);
         
-        // Set the next position index
-        positionIndex = (positionIndex + 1) % positions.length;
-        const nextPosition = positions[positionIndex];
+        // Map oscillation value to screen position
+        const newX = centerPoint.x + oscillation * (rightPoint.x - centerPoint.x);
         
-        // Start transition
-        isTransitioning = true;
+        // Update position
+        setPosition({
+          x: newX,
+          y: viewportHeight / 2
+        });
         
-        // Play sound at extremes (positions 0 and 2)
+        // Play sound at extremes (near -1 or 1)
         if (soundEnabled && sound && !audioEnabled) {
-          if (positionIndex === 0) {
-            sound.playTone('C4', soundVolume);
-          } else if (positionIndex === 2) {
-            sound.playTone('G4', soundVolume);
+          // Only trigger sounds when crossing thresholds
+          const threshold = 0.95; // How close to extremes to trigger sound
+          if (Math.abs(oscillation) > threshold) {
+            // Only play sound when crossing the threshold from below
+            const prevOscillation = (lastX - centerPoint.x) / (rightPoint.x - centerPoint.x);
+            
+            if (Math.abs(prevOscillation) <= threshold) {
+              sound.playTone(oscillation > 0 ? 'G4' : 'C4', soundVolume);
+              
+              // Change color at extremes if enabled
+              if (autoChangeColors) {
+                setSelectedColor(COLORS[Math.floor(Math.random() * COLORS.length)].value);
+              }
+            }
           }
         }
         
-        // Change color if enabled and at extreme positions
-        if (autoChangeColors && (positionIndex === 0 || positionIndex === 2)) {
-          setSelectedColor(COLORS[Math.floor(Math.random() * COLORS.length)].value);
+        // Update audio panning if enabled
+        if (audioProcessor && audioEnabled && audioPanningEnabled) {
+          try {
+            // Map current position to pan value (-1 to 1)
+            const normalizedPosition = (newX - leftPoint.x) / (rightPoint.x - leftPoint.x);
+            const panValue = (normalizedPosition * 2) - 1; 
+            const clampedPanValue = Math.max(-1, Math.min(1, panValue));
+            
+            // Only update if the pan value changed significantly (helps reduce browser load)
+            const currentPan = audioProcessor.getCurrentPan();
+            if (Math.abs(currentPan - clampedPanValue) > 0.05) {
+              audioProcessor.setPan(clampedPanValue);
+            }
+          } catch (panError) {
+            console.warn("Error setting pan during animation:", panError);
+            // Continue animation even if pan setting fails
+          }
+        } else if (audioProcessor && audioEnabled && !audioPanningEnabled) {
+          // Keep audio centered if panning is disabled
+          try {
+            audioProcessor.setPan(0);
+          } catch (error) {
+            console.warn("Error resetting pan to center:", error);
+          }
         }
         
-        // Create smooth transition
-        const startPosition = { ...position };
-        const startTime = Date.now();
-        const duration = Math.max(500, speed); // Transition duration in ms
+        // Store last position for threshold detection
+        lastX = newX;
         
-        // Create animation function
-        const animate = () => {
-          const elapsed = Date.now() - startTime;
-          const progress = Math.min(elapsed / duration, 1);
-          
-          // Easing function for smooth transition (ease-in-out)
-          const eased = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
-          
-          // Calculate current position
-          const currentX = startPosition.x + (nextPosition.x - startPosition.x) * eased;
-          const currentY = startPosition.y + (nextPosition.y - startPosition.y) * eased;
-          
-          // Update position
-          setPosition({
-            x: currentX,
-            y: currentY
-          });
-          
-          // Update panner for audio - full -1 to 1 range
-          if (audioProcessor && audioEnabled) {
-            // Map x position to panner value (-1 to 1)
-            const normalizedPosition = (currentX - (viewportWidth * 0.1)) / (viewportWidth * 0.8);
-            const panValue = (normalizedPosition * 2) - 1;
-            audioProcessor.setPan(Math.max(-1, Math.min(1, panValue)));
-          }
-          
-          // Continue animation if not complete
-          if (progress < 1) {
-            requestAnimationFrame(animate);
-          } else {
-            isTransitioning = false;
-          }
-        };
-        
-        // Start animation
-        requestAnimationFrame(animate);
-        
-      }, Math.max(1000, speed * 1.5)); // Wait time between movements
+        // Continue animation
+        animationFrameId = requestAnimationFrame(animate);
+      };
       
+      // Start animation
+      animationFrameId = requestAnimationFrame(animate);
+      
+      // Clean up function
       return () => {
-        clearInterval(interval);
+        if (animationFrameId) {
+          cancelAnimationFrame(animationFrameId);
+        }
       };
     } else {
       // AUDIO-CONTROLLED MOVEMENT - Position follows audio pan
@@ -405,13 +554,18 @@ export function EMDRProcessor() {
       const updatePositionFromPan = () => {
         if (!audioProcessor || !audioEnabled) return;
         
-        // Get current pan value from audio processor
+        // Get current pan value from audio processor - ranges from -1 to 1
         const currentPan = audioProcessor.getCurrentPan();
         
-        // Always update position on each frame for smoothest movement
-        // Pan range is -1 to 1, convert to screen position
-        // -1 = far left (10% of screen), 0 = center, 1 = far right (90% of screen)
-        const newX = ((currentPan + 1) / 2) * (viewportWidth * 0.8) + (viewportWidth * 0.1);
+        // Convert pan value to screen position
+        // Pan range is -1 to 1, convert to screen position with configurable amplitude
+        const amplitude = motionAmplitude / 100; // Convert percentage to decimal
+        const leftPosition = viewportWidth * (0.5 - amplitude/2);
+        const rightPosition = viewportWidth * (0.5 + amplitude/2);
+        const centerPosition = viewportWidth * 0.5;
+        
+        // Calculate position based on pan value
+        const newX = centerPosition + (currentPan * (rightPosition - centerPosition));
         
         // Update position state
         setPosition({
@@ -421,6 +575,18 @@ export function EMDRProcessor() {
         
         // Only trigger special effects when crossing thresholds
         if (currentPan !== lastPanValue) {
+          // If audio panning enabled, periodically force extreme pan values
+          // to make sure the audio system stays active
+          if (audioPanningEnabled && Math.random() < 0.01) { // ~1% chance per frame
+            // Briefly ping extreme value and return to current
+            const extremePan = currentPan > 0 ? 1 : -1;
+            audioProcessor.setPan(extremePan);
+            setTimeout(() => {
+              // Return to where we should be
+              audioProcessor.setPan(currentPan);
+            }, 50);
+          }
+          
           // Handle color changes at extremes
           if (autoChangeColors) {
             if (Math.abs(currentPan) > 0.9 && Math.abs(lastPanValue) <= 0.9) {
@@ -453,7 +619,13 @@ export function EMDRProcessor() {
         // Recalculate position based on current pan value
         if (audioProcessor) {
           const currentPan = audioProcessor.getCurrentPan();
-          const newX = ((currentPan + 1) / 2) * (newWidth * 0.8) + (newWidth * 0.1);
+          const amplitude = motionAmplitude / 100; // Convert percentage to decimal
+          const leftPosition = newWidth * (0.5 - amplitude/2);
+          const rightPosition = newWidth * (0.5 + amplitude/2);
+          const centerPosition = newWidth * 0.5;
+          
+          // Calculate position based on pan value
+          const newX = centerPosition + (currentPan * (rightPosition - centerPosition));
           
           // Update position state
           setPosition({
@@ -483,6 +655,9 @@ export function EMDRProcessor() {
     autoChangeColors,
     audioProcessor,
     audioEnabled,
+    audioPanningEnabled,
+    targetMotionType,
+    motionAmplitude,
   ]);
 
   // Handle start/stop
@@ -532,8 +707,21 @@ export function EMDRProcessor() {
           try {
             await audioProcessor.play();
             console.log("Audio playback started successfully");
-            // Set initial pan to center
-            audioProcessor.setPan(0);
+            
+            // Force extreme pan values to kickstart the panning system
+            if (audioPanningEnabled) {
+              // Quick ping-pong to ensure panner is active
+              audioProcessor.setPan(-1);
+              setTimeout(() => {
+                audioProcessor.setPan(1);
+                setTimeout(() => {
+                  audioProcessor.setPan(0);
+                }, 100);
+              }, 100);
+            } else {
+              // Set initial pan to center
+              audioProcessor.setPan(0);
+            }
           } catch (error) {
             console.error('Error playing audio:', error);
             setAudioError('Failed to play audio. Please try clicking the start button again.');
@@ -547,6 +735,22 @@ export function EMDRProcessor() {
         // Stopping - pause audio if active
         if (audioProcessor) {
           audioProcessor.pause();
+        }
+        
+        // Gracefully return to center with animation
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+        
+        // Apply a smooth transition to center
+        document.documentElement.style.setProperty('--emdr-transition-duration', '0.6s');
+        setPosition({
+          x: viewportWidth / 2,
+          y: viewportHeight / 2
+        });
+        
+        // Play a gentle completion tone
+        if (soundEnabled && sound) {
+          sound.playTone('C4', soundVolume - 5); // Softer completion tone
         }
       }
       
@@ -562,41 +766,170 @@ export function EMDRProcessor() {
     setSettingsOpen(!settingsOpen);
   };
 
+  // Create a simpler audio processor based on the SimplePanner approach
+  const createSimpleAudioProcessor = (audioUrl: string, title: string): AudioProcessor => {
+    // Create an audio element 
+    const audioElement = new Audio();
+    audioElement.src = audioUrl;
+    audioElement.crossOrigin = 'anonymous';
+    audioElement.loop = true;
+    audioElement.preload = 'auto';
+    
+    // These will be initialized when play is called
+    let audioContext: AudioContext | null = null;
+    let sourceNode: MediaElementAudioSourceNode | null = null;
+    let gainNode: GainNode | null = null;
+    let pannerNode: StereoPannerNode | null = null;
+    let isPlaying = false;
+    let currentPanValue = 0;
+    
+    // Initialize Web Audio API nodes
+    const initAudioNodes = async () => {
+      if (audioContext && sourceNode && gainNode && pannerNode) {
+        return; // Already initialized
+      }
+      
+      try {
+        // Create audio context
+        audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        
+        // Resume the context if suspended (browser autoplay policy)
+        if (audioContext.state === 'suspended') {
+          await audioContext.resume();
+        }
+        
+        // Create audio nodes
+        sourceNode = audioContext.createMediaElementSource(audioElement);
+        gainNode = audioContext.createGain();
+        pannerNode = audioContext.createStereoPanner();
+        
+        // Connect the nodes
+        sourceNode.connect(pannerNode);
+        pannerNode.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        // Set initial values
+        pannerNode.pan.value = 0;
+        gainNode.gain.value = 1.0;
+        
+        console.log('Audio nodes initialized successfully');
+      } catch (error) {
+        console.error('Failed to initialize audio nodes:', error);
+        throw error;
+      }
+    };
+    
+    return {
+      play: async () => {
+        try {
+          // Initialize audio nodes if not done yet
+          await initAudioNodes();
+          
+          // Play the audio
+          await audioElement.play();
+          isPlaying = true;
+          console.log('Audio playback started');
+          
+          return Promise.resolve();
+        } catch (error) {
+          console.error('Error playing audio:', error);
+          
+          // Try direct playback if Web Audio API fails
+          try {
+            // Disconnect any audio nodes to allow direct playback
+            if (sourceNode) {
+              sourceNode.disconnect();
+            }
+            
+            // Try direct playback
+            await audioElement.play();
+            isPlaying = true;
+            console.log('Using fallback direct playback');
+            
+            return Promise.resolve();
+          } catch (fallbackError) {
+            console.error('Fallback playback also failed:', fallbackError);
+            return Promise.reject(fallbackError);
+          }
+        }
+      },
+      pause: () => {
+        audioElement.pause();
+        isPlaying = false;
+      },
+      stop: () => {
+        audioElement.pause();
+        audioElement.currentTime = 0;
+        isPlaying = false;
+      },
+      setPan: (value: number) => {
+        // Store the current pan value even if we can't apply it yet
+        currentPanValue = Math.max(-1, Math.min(1, value));
+        
+        // Apply pan if pannerNode exists
+        if (pannerNode) {
+          pannerNode.pan.value = currentPanValue;
+        }
+      },
+      getCurrentPan: () => {
+        // Return the stored value if pannerNode doesn't exist yet
+        return pannerNode ? pannerNode.pan.value : currentPanValue;
+      },
+      setVolume: (value: number) => {
+        // Convert dB to linear gain (value is in dB)
+        const dbValue = Math.max(-60, Math.min(0, value));
+        const gainValue = Math.pow(10, dbValue / 20);
+        
+        if (gainNode) {
+          gainNode.gain.value = gainValue;
+        } else {
+          // Fallback to element volume
+          audioElement.volume = Math.max(0, Math.min(1, (dbValue + 60) / 60));
+        }
+      },
+      isPlaying: () => {
+        return isPlaying;
+      },
+      getTitle: () => {
+        return title;
+      },
+      onEnded: (callback: () => void) => {
+        audioElement.addEventListener('ended', callback);
+      }
+    };
+  };
+
   // Request audio permission explicitly
   const requestAudioPermission = async () => {
     try {
       console.log("Requesting audio permission...");
       
-      // Initialize Tone.js first (requires user gesture)
-      await Tone.start();
-      console.log("Tone.js context started");
-      
-      // Create temporary audio context just for permission
+      // Create a temporary audio context just for permission
       const tempContext = new (window.AudioContext || (window as any).webkitAudioContext)();
       await tempContext.resume();
       
-      // Play a silent sound to trigger permission
-      const oscillator = tempContext.createOscillator();
-      const gainNode = tempContext.createGain();
-      gainNode.gain.value = 0.01; // Almost silent
-      oscillator.connect(gainNode);
-      gainNode.connect(tempContext.destination);
-      
-      oscillator.start();
-      await new Promise(resolve => setTimeout(resolve, 100));
-      oscillator.stop();
-      
-      // Try to also resume our main audio context
-      await resumeAudioContext();
-      
-      // Also try to play a brief sound with the HTML Audio API
+      // Try to also initialize Tone.js
       try {
-        const testSound = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA");
-        testSound.volume = 0.1;
-        await testSound.play();
-        setTimeout(() => testSound.pause(), 50);
-      } catch (e) {
-        console.warn("HTML Audio test failed, might be blocked:", e);
+        await Tone.start();
+        console.log("Tone.js context started");
+      } catch (toneError) {
+        console.warn("Tone.js initialization failed:", toneError);
+        // Continue anyway
+      }
+      
+      // Try to play a brief silent sound
+      try {
+        const oscillator = tempContext.createOscillator();
+        const gainNode = tempContext.createGain();
+        gainNode.gain.value = 0.01; // Almost silent
+        oscillator.connect(gainNode);
+        gainNode.connect(tempContext.destination);
+        
+        oscillator.start();
+        await new Promise(resolve => setTimeout(resolve, 100));
+        oscillator.stop();
+      } catch (oscError) {
+        console.warn("Oscillator test failed:", oscError);
       }
       
       setAudioPermissionGranted(true);
@@ -620,6 +953,10 @@ export function EMDRProcessor() {
         className="relative w-full h-full bg-black overflow-hidden flex-grow"
         role="region"
         aria-label="EMDR visual target area"
+        style={{
+          // Define CSS variables for transitions
+          "--emdr-transition-duration": "0.3s"
+        } as React.CSSProperties}
       >
         {/* Moving element */}
         <div
@@ -630,7 +967,7 @@ export function EMDRProcessor() {
             left: position.x - size/2,
             top: position.y - size/2,
             transform: 'translate(0, 0)',
-            transition: 'none'
+            transition: isActive ? 'none' : 'left var(--emdr-transition-duration) ease-out, top var(--emdr-transition-duration) ease-out' // Add smooth transition when not active
           }}
           aria-live="polite"
           aria-label={isActive ? "Moving target" : "Stationary target"}
@@ -650,7 +987,7 @@ export function EMDRProcessor() {
             <span className="text-xs">Playing: {audioTitle}</span>
             
             {/* Audio pan visualization */}
-            {isActive && (
+            {isActive && audioPanningEnabled && (
               <div className="mt-1 flex items-center" aria-label="Audio pan position indicator">
                 <div className="h-2 bg-gray-700 rounded-full w-full flex items-center relative">
                   <div 
@@ -811,16 +1148,128 @@ export function EMDRProcessor() {
                 </div>
               )}
             </div>
+            
+            {/* Saved Audio Files */}
+            <div className="mt-3">
+              <button
+                onClick={() => setShowSavedFiles(!showSavedFiles)}
+                className="w-full bg-blue-600 hover:bg-blue-500 text-white py-2 px-3 rounded text-sm mb-2"
+                aria-expanded={showSavedFiles}
+              >
+                {showSavedFiles ? 'Hide' : 'Show'} Saved Audio Files ({savedAudioFiles.length})
+              </button>
+              
+              {showSavedFiles && (
+                <div className="mt-2 max-h-48 overflow-y-auto bg-gray-900 rounded p-2">
+                  {savedAudioFiles.length === 0 ? (
+                    <p className="text-gray-400 text-sm py-2 px-1">
+                      No saved audio files yet. Upload an MP3 to save it here.
+                    </p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {savedAudioFiles.map((file) => (
+                        <li key={file.id} className="bg-gray-800 rounded p-2">
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-white text-sm font-medium truncate" title={file.name}>
+                                {file.name}
+                              </p>
+                              <p className="text-gray-400 text-xs">
+                                {formatFileSize(file.size)} • {formatDate(file.timestamp)}
+                              </p>
+                            </div>
+                            <div className="flex space-x-1 ml-2">
+                              <button
+                                onClick={() => loadSavedAudioFile(file)}
+                                className="bg-green-600 hover:bg-green-500 text-white rounded-full p-1"
+                                title="Load this audio file"
+                                aria-label={`Load ${file.name}`}
+                              >
+                                ▶
+                              </button>
+                              <button
+                                onClick={() => deleteSavedAudioFile(file.id)}
+                                className="bg-red-600 hover:bg-red-500 text-white rounded-full p-1"
+                                title="Delete this saved audio file"
+                                aria-label={`Delete ${file.name}`}
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
           
           {/* Explanation of audio panning */}
           {audioEnabled && (
             <div className="mt-2 p-3 rounded bg-blue-900 bg-opacity-40 text-sm text-blue-100">
               <p className="mb-1 font-medium">About audio mode:</p>
-              <p className="text-xs">
-                When audio is enabled, the target position is controlled by the stereo panning of the audio. 
-                The target will move left and right as the sound moves between your left and right speakers or headphones.
+              <p className="text-xs mb-2">
+                When audio is enabled, you can choose how the target and audio work together.
               </p>
+              
+              <div className="flex flex-col space-y-3">
+                {/* Target motion control */}
+                <div>
+                  <label className="text-white text-sm block mb-1">Target Motion:</label>
+                  <select
+                    value={targetMotionType}
+                    onChange={(e) => setTargetMotionType(e.target.value)}
+                    className="w-full bg-gray-700 text-white text-sm p-1 rounded"
+                    disabled={isActive}
+                  >
+                    <option value="auto">Follow audio panning</option>
+                    <option value="controlled">Controlled motion</option>
+                  </select>
+                </div>
+                
+                {/* Audio panning toggle */}
+                <div className="flex items-center">
+                  <input
+                    id="audioPanning"
+                    type="checkbox"
+                    checked={audioPanningEnabled}
+                    onChange={(e) => setAudioPanningEnabled(e.target.checked)}
+                    className="mr-2 h-4 w-4"
+                    aria-checked={audioPanningEnabled}
+                  />
+                  <label htmlFor="audioPanning" className="text-white text-sm">
+                    Enable audio panning effect
+                  </label>
+                </div>
+                
+                {!audioPanningEnabled && (
+                  <p className="text-xs text-blue-200">
+                    Audio panning disabled - sound will remain centered
+                  </p>
+                )}
+                
+                {/* Motion amplitude control */}
+                <div>
+                  <label htmlFor="motionAmplitude" className="text-white text-sm block mb-1">
+                    Motion Width: {motionAmplitude}%
+                  </label>
+                  <input
+                    id="motionAmplitude"
+                    type="range"
+                    min={20}
+                    max={90}
+                    step={5}
+                    value={motionAmplitude}
+                    onChange={(e) => setMotionAmplitude(Number(e.target.value))}
+                    className="w-full"
+                    aria-valuemin={20}
+                    aria-valuemax={90}
+                    aria-valuenow={motionAmplitude}
+                  />
+                </div>
+              </div>
             </div>
           )}
           

@@ -158,7 +158,8 @@ export function SimplePanner() {
   // Effect to update pan value when it changes
   useEffect(() => {
     if (pannerNode.current) {
-      pannerNode.current.pan.value = panValue;
+      // Map from UI range (0-1) to audio API range (-1 to 1)
+      pannerNode.current.pan.value = (panValue * 2) - 1;
     }
   }, [panValue]);
   
@@ -274,7 +275,7 @@ export function SimplePanner() {
         {/* Pan control */}
         <div className="mb-4">
           <label htmlFor="panControl" className="block text-sm font-medium text-gray-700 mb-2">
-            Current Pan: {panValue.toFixed(2)}
+            Current Pan: {panValue.toFixed(2)} (Audio API: {((panValue * 2) - 1).toFixed(2)})
             <span className="ml-2 text-xs text-gray-500">
               {panValue < 0.4 ? 'Left' : panValue > 0.6 ? 'Right' : 'Center'}
             </span>
@@ -410,7 +411,7 @@ export function SimplePanner() {
       {/* Status text */}
       <div className="mt-2 text-sm text-gray-500">
         {isPlaying ? 'Playing' : 'Stopped'} - 
-        Pan: {panValue.toFixed(2)} &nbsp;
+        Pan: {panValue.toFixed(2)} (API: {((panValue * 2) - 1).toFixed(2)}) &nbsp;
         {oscillationEnabled ? 
           `(Sine wave: ${frequency.toFixed(1)}Hz, amplitude: ${amplitude.toFixed(2)})` : 
           '(Manual control)'

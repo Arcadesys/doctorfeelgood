@@ -46,6 +46,7 @@ export class AudioEngine {
   private audioElement: HTMLAudioElement | null = null;
   private isPlaying = false;
   private currentMode: AudioMode = 'synthesizer';
+  private audioElementConnected = false; // Track if the audio element has been connected
   
   // Configuration
   private contactSoundConfig: ContactSoundConfig = {
@@ -94,6 +95,12 @@ export class AudioEngine {
       // Set audio element if provided
       if (audioElement) {
         this.audioElement = audioElement;
+        
+        // Create a MediaElementSourceNode right away and keep it for the lifetime
+        // of the audio engine instance
+        this.audioTrackNode = this.context.createMediaElementSource(audioElement);
+        this.audioTrackNode.connect(this.gainNode);
+        this.audioElementConnected = true;
       }
       
       console.log('AudioEngine initialized successfully');
@@ -187,7 +194,9 @@ export class AudioEngine {
       if (this.currentMode === 'synthesizer') {
         return this.startConstantTone();
       } else if (this.currentMode === 'audioTrack') {
-        return this.startAudioTrack();
+        // Handle the promise-based audio track start differently
+        this.startAudioTrack();
+        return true; // Return true immediately, state will be updated by the promise
       }
       return false;
     } catch (error) {
@@ -286,17 +295,14 @@ export class AudioEngine {
   }
   
   // Start playing audio track
-  private startAudioTrack(): boolean {
-    if (!this.context || this.isPlaying || this.currentMode !== 'audioTrack' || !this.audioElement) return false;
+  private startAudioTrack(): void {
+    if (!this.context || this.isPlaying || this.currentMode !== 'audioTrack' || !this.audioElement) return;
     
     try {
-      // Set up audio element if not already connected
-      if (!this.audioTrackNode) {
-        const source = this.context.createMediaElementSource(this.audioElement);
-        if (this.gainNode) {
-          source.connect(this.gainNode);
-          this.audioTrackNode = source;
-        }
+      // No need to create a new MediaElementSourceNode - we already did this in initialize()
+      if (!this.audioElementConnected && this.audioTrackNode === null) {
+        console.error('Audio element not properly connected');
+        return;
       }
       
       // Configure audio element
@@ -308,19 +314,24 @@ export class AudioEngine {
         this.gainNode.gain.value = this.audioTrackConfig.volume;
       }
       
-      // Play audio element
-      return this.audioElement.play()
-        .then(() => {
-          this.isPlaying = true;
-          return true;
-        })
-        .catch(error => {
-          console.error('Error playing audio track:', error);
-          return false;
-        });
+      // Add one-time event listeners for success and failure
+      const onPlay = () => {
+        this.isPlaying = true;
+        this.audioElement?.removeEventListener('play', onPlay);
+      };
+      
+      const onError = () => {
+        console.error('Error playing audio track');
+        this.audioElement?.removeEventListener('error', onError);
+      };
+      
+      this.audioElement.addEventListener('play', onPlay);
+      this.audioElement.addEventListener('error', onError);
+      
+      // Start playback
+      this.audioElement.play();
     } catch (error) {
       console.error('Error starting audio track:', error);
-      return false;
     }
   }
   

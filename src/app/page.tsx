@@ -1,11 +1,11 @@
 'use client';
 
-import { SimplePanner } from '@/components/SimplePanner';
+import { EMDRProcessor } from '@/components/EMDRProcessor';
 
 export default function PannerPage() {
   return (
     <main>
-      <SimplePanner />
+      <EMDRProcessor />
     </main>
   );
 }

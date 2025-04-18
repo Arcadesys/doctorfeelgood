@@ -236,6 +236,12 @@ export function SimplePanner() {
           <div className="mb-4 p-2 bg-blue-50 rounded">
             <div className="text-sm font-medium">Currently loaded:</div>
             <div className="text-xs">{audioTitle}</div>
+            {/* Show attribution for sample sounds */}
+            {!audioFile && audioUrl && sampleAudioFiles.find(s => s.url === audioUrl)?.attribution && (
+              <div className="text-xs text-gray-500 mt-1">
+                {sampleAudioFiles.find(s => s.url === audioUrl)?.attribution}
+              </div>
+            )}
           </div>
         )}
         

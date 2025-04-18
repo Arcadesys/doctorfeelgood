@@ -18,6 +18,7 @@ export function EMDRProcessor() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [folderPath, setFolderPath] = useState<string>('');
   const [a11yMessage, setA11yMessage] = useState<string>('Visual target ready. Audio controls available at bottom of screen.');
+  const [theme, setTheme] = useState<'light' | 'dark'>('dark');
   
   // Animation state
   const [animationFrameId, setAnimationFrameId] = useState<number | null>(null);
@@ -108,6 +109,37 @@ export function EMDRProcessor() {
     }
   }, [selectedAudio]);
   
+  // Load theme preference on mount
+  useEffect(() => {
+    // Check for saved theme preference
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'light' || savedTheme === 'dark') {
+      setTheme(savedTheme);
+      // Apply theme to document
+      document.documentElement.classList.toggle('dark', savedTheme === 'dark');
+    } else {
+      // Check system preference
+      const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      setTheme(systemPrefersDark ? 'dark' : 'light');
+      document.documentElement.classList.toggle('dark', systemPrefersDark);
+    }
+  }, []);
+  
+  // Toggle theme function
+  const toggleTheme = () => {
+    const newTheme = theme === 'dark' ? 'light' : 'dark';
+    setTheme(newTheme);
+    localStorage.setItem('theme', newTheme);
+    document.documentElement.classList.toggle('dark', newTheme === 'dark');
+    
+    // Announce theme change for screen readers
+    setA11yMessage(`Theme changed to ${newTheme} mode`);
+
+    // Play a theme change sound effect if we wanted to add one
+    // const audio = new Audio('/sounds/theme-toggle.mp3');
+    // audio.play().catch(e => console.error('Error playing theme toggle sound:', e));
+  };
+  
   // Draw visual target (non-animated state)
   const drawVisualTarget = useCallback(() => {
     if (!canvasRef.current) return;
@@ -123,11 +155,11 @@ export function EMDRProcessor() {
       // Draw static ball in the center
       ctx.beginPath();
       ctx.arc(window.innerWidth / 2, window.innerHeight / 2, 20, 0, Math.PI * 2);
-      ctx.fillStyle = '#6b7280'; // Gray
+      ctx.fillStyle = theme === 'dark' ? '#6b7280' : '#3b82f6'; // Gray in dark mode, Blue in light mode
       ctx.fill();
       ctx.closePath();
     }
-  }, [isPlaying]);
+  }, [isPlaying, theme]);
   
   // Setup canvas and handle resize
   useEffect(() => {
@@ -213,13 +245,8 @@ export function EMDRProcessor() {
         animationIdRef.current = null;
         setAnimationFrameId(null);
         
-        // Clear canvas
-        if (canvasRef.current) {
-          const ctx = canvasRef.current.getContext('2d');
-          if (ctx) {
-            ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-          }
-        }
+        // Redraw static ball
+        drawVisualTarget();
       }
     }
     
@@ -230,7 +257,7 @@ export function EMDRProcessor() {
         animationIdRef.current = null;
       }
     };
-  }, [isPlaying]);
+  }, [isPlaying, drawVisualTarget]);
   
   // Handle menu open/close with sound effects
   const toggleMenu = () => {
@@ -387,7 +414,7 @@ export function EMDRProcessor() {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-black p-4 relative">
+    <div className={`flex flex-col items-center justify-center min-h-screen ${theme === 'dark' ? 'bg-black' : 'bg-gray-100'} p-4 relative transition-colors duration-300`}>
       {/* Audio elements for sound effects and playback */}
       <audio ref={menuOpenSoundRef} src="/sounds/menu-open.mp3" preload="auto" />
       <audio ref={menuCloseSoundRef} src="/sounds/menu-close.mp3" preload="auto" />
@@ -404,9 +431,34 @@ export function EMDRProcessor() {
         }}
       />
       
+      {/* Theme Toggle Button */}
+      <button 
+        className={`absolute top-4 left-4 ${theme === 'dark' ? 'text-white' : 'text-gray-800'} z-20 p-2 rounded-full hover:bg-opacity-20 hover:bg-gray-500 transition-colors`}
+        onClick={toggleTheme}
+        aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+      >
+        {theme === 'dark' ? (
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+        ) : (
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+        )}
+      </button>
+      
       {/* Hamburger Menu Button */}
       <button 
-        className="absolute top-4 right-4 text-white z-20"
+        className={`absolute top-4 right-4 ${theme === 'dark' ? 'text-white' : 'text-gray-800'} z-20`}
         onClick={toggleMenu}
         aria-label="Toggle menu"
       >
@@ -420,26 +472,26 @@ export function EMDRProcessor() {
       {/* Sliding Menu */}
       <div 
         ref={menuRef}
-        className={`fixed top-0 right-0 h-full bg-gray-900 w-80 p-6 shadow-lg z-10 transform transition-transform duration-300 ease-in-out ${isMenuOpen ? 'translate-x-0' : 'translate-x-full'} overflow-y-auto`}
+        className={`fixed top-0 right-0 h-full ${theme === 'dark' ? 'bg-gray-900' : 'bg-white'} w-80 p-6 shadow-lg z-10 transform transition-transform duration-300 ease-in-out ${isMenuOpen ? 'translate-x-0' : 'translate-x-full'} overflow-y-auto`}
         aria-hidden={!isMenuOpen}
       >
-        <h2 className="text-2xl font-bold mb-6 text-white">EMDR Settings</h2>
+        <h2 className={`text-2xl font-bold mb-6 ${theme === 'dark' ? 'text-white' : 'text-gray-800'}`}>EMDR Settings</h2>
         
         {/* Audio Selection Section */}
         <div className="mb-6">
-          <h3 className="text-xl font-bold text-white mb-4">Audio Selection</h3>
+          <h3 className={`text-xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-800'} mb-4`}>Audio Selection</h3>
           
           {/* Upload Audio */}
-          <div className="bg-white rounded-lg p-4 mb-4">
+          <div className={`${theme === 'dark' ? 'bg-gray-800 text-gray-200' : 'bg-white text-gray-800'} rounded-lg p-4 mb-4 shadow`}>
             <h4 className="font-bold mb-2">Upload Your Audio</h4>
             <input 
               type="file" 
               accept="audio/*"
-              className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+              className={`w-full text-sm ${theme === 'dark' ? 'text-gray-300 file:bg-gray-700 file:text-gray-200 hover:file:bg-gray-600' : 'text-gray-500 file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100'} file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold`}
             />
             
             <button 
-              className="w-full mt-3 bg-blue-100 hover:bg-blue-200 text-blue-800 py-2 px-4 rounded flex items-center justify-center"
+              className={`w-full mt-3 ${theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-blue-100 hover:bg-blue-200 text-blue-800'} py-2 px-4 rounded flex items-center justify-center`}
               onClick={() => {}}
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2">
@@ -450,22 +502,22 @@ export function EMDRProcessor() {
           </div>
           
           {/* Sample Audio */}
-          <div className="bg-white rounded-lg p-4 mb-4">
+          <div className={`${theme === 'dark' ? 'bg-gray-800 text-gray-200' : 'bg-white text-gray-800'} rounded-lg p-4 mb-4 shadow`}>
             <h4 className="font-bold mb-2">Sample Audio</h4>
             <div className="grid grid-cols-2 gap-2">
-              <button className="bg-gray-100 p-3 rounded text-sm text-left hover:bg-gray-200">
+              <button className={`${theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-3 rounded text-sm text-left`}>
                 White noise for focus and relaxation
               </button>
-              <button className="bg-gray-100 p-3 rounded text-sm text-left hover:bg-gray-200">
+              <button className={`${theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-3 rounded text-sm text-left`}>
                 Clean 440Hz sine wave tone
               </button>
-              <button className="bg-gray-100 p-3 rounded text-sm text-left hover:bg-gray-200">
+              <button className={`${theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-3 rounded text-sm text-left`}>
                 Deeper 220Hz sine wave tone
               </button>
-              <button className="bg-gray-100 p-3 rounded text-sm text-left hover:bg-gray-200">
+              <button className={`${theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-3 rounded text-sm text-left`}>
                 Soft triangle wave for gentle stimulation
               </button>
-              <button className="bg-gray-100 p-3 rounded text-sm text-left hover:bg-gray-200">
+              <button className={`${theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-3 rounded text-sm text-left`}>
                 Gentle pink noise for relaxation
               </button>
             </div>
@@ -474,10 +526,10 @@ export function EMDRProcessor() {
         
         {/* Session Controls */}
         <div className="mb-6">
-          <h3 className="text-xl font-bold text-white mb-4">Session Controls</h3>
+          <h3 className={`text-xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-800'} mb-4`}>Session Controls</h3>
           
           {/* Session Timing */}
-          <div className="bg-white rounded-lg p-4 mb-4">
+          <div className={`${theme === 'dark' ? 'bg-gray-800 text-gray-200' : 'bg-white text-gray-800'} rounded-lg p-4 mb-4 shadow`}>
             <h4 className="font-bold mb-2">Session Timing</h4>
             
             <div className="mb-4">
@@ -488,9 +540,9 @@ export function EMDRProcessor() {
                 type="range" 
                 min="0" 
                 max="100" 
-                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                className={`w-full h-2 ${theme === 'dark' ? 'bg-gray-600' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
               />
-              <p className="text-xs text-gray-500 mt-1">Position in the audio to start playback</p>
+              <p className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'} mt-1`}>Position in the audio to start playback</p>
             </div>
             
             <div className="mb-4">
@@ -501,22 +553,22 @@ export function EMDRProcessor() {
                 type="range" 
                 min="0" 
                 max="100" 
-                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                className={`w-full h-2 ${theme === 'dark' ? 'bg-gray-600' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
               />
-              <p className="text-xs text-gray-500 mt-1">How long the session should last before fading out</p>
+              <p className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'} mt-1`}>How long the session should last before fading out</p>
             </div>
             
             <div className="grid grid-cols-5 gap-2">
-              <button className="bg-gray-100 p-2 rounded text-xs hover:bg-gray-200">1:00</button>
-              <button className="bg-gray-100 p-2 rounded text-xs hover:bg-gray-200">3:00</button>
-              <button className="bg-gray-100 p-2 rounded text-xs hover:bg-gray-200">5:00</button>
-              <button className="bg-gray-100 p-2 rounded text-xs hover:bg-gray-200">10:00</button>
-              <button className="bg-gray-100 p-2 rounded text-xs hover:bg-gray-200">Full</button>
+              <button className={`${theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-2 rounded text-xs`}>1:00</button>
+              <button className={`${theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-2 rounded text-xs`}>3:00</button>
+              <button className={`${theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-2 rounded text-xs`}>5:00</button>
+              <button className={`${theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-2 rounded text-xs`}>10:00</button>
+              <button className={`${theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-2 rounded text-xs`}>Full</button>
             </div>
           </div>
           
           {/* Pan Settings */}
-          <div className="bg-white rounded-lg p-4 mb-4">
+          <div className={`${theme === 'dark' ? 'bg-gray-800 text-gray-200' : 'bg-white text-gray-800'} rounded-lg p-4 mb-4 shadow`}>
             <h4 className="font-bold mb-2">Current Pan: 0.50 (Audio API: 0.00)</h4>
             <div className="flex items-center mb-1">
               <span className="text-xs">L</span>
@@ -524,43 +576,28 @@ export function EMDRProcessor() {
                 type="range" 
                 min="0" 
                 max="100" 
-                className="flex-1 mx-2 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                className={`flex-1 mx-2 h-2 ${theme === 'dark' ? 'bg-gray-600' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
               />
               <span className="text-xs">R</span>
             </div>
-            <p className="text-xs text-gray-500 mt-1">Manual control overrides sine wave while adjusting</p>
+            <p className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'} mt-1`}>Manual control overrides sine wave while adjusting</p>
           </div>
           
           {/* Volume Control */}
-          <div className="bg-white rounded-lg p-4 mb-4">
+          <div className={`${theme === 'dark' ? 'bg-gray-800 text-gray-200' : 'bg-white text-gray-800'} rounded-lg p-4 mb-4 shadow`}>
             <h4 className="font-bold mb-2">Volume: 70%</h4>
             <input 
               type="range" 
               min="0" 
               max="100" 
-              className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+              className={`w-full h-2 ${theme === 'dark' ? 'bg-gray-600' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
             />
           </div>
-        </div>
-
-        <div className="flex flex-col gap-4 mb-8">
-          <Link href="/" passHref className="w-full">
-            <button className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xl font-bold py-3 px-6 rounded">
-              Simple Panner
-            </button>
-          </Link>
-          
-          <Link href="/beat-sync" passHref className="w-full">
-            <button className="w-full bg-purple-600 hover:bg-purple-500 text-white text-xl font-bold py-3 px-6 rounded relative group">
-              Beat-Sync Panner
-              <span className="absolute top-0 right-0 -mt-2 -mr-2 bg-yellow-400 text-black text-xs px-2 py-1 rounded-full font-bold transform group-hover:scale-110 transition-transform">NEW</span>
-            </button>
-          </Link>
         </div>
       </div>
 
       {/* Main Content with Canvas */}
-      <h1 className="text-3xl font-bold mb-6 text-white">EMDR Therapy</h1>
+      <h1 className={`text-3xl font-bold mb-6 ${theme === 'dark' ? 'text-white' : 'text-gray-800'}`}>EMDR Therapy</h1>
       
       {/* Full viewport canvas for visual target */}
       <canvas 
@@ -577,7 +614,7 @@ export function EMDRProcessor() {
       </div>
       
       {/* Minimalist Audio Player Controls */}
-      <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-gray-800 bg-opacity-80 p-4 rounded-full shadow-lg z-10">
+      <div className={`fixed bottom-6 left-1/2 transform -translate-x-1/2 ${theme === 'dark' ? 'bg-gray-800' : 'bg-white'} ${theme === 'dark' ? 'bg-opacity-80' : 'bg-opacity-90'} p-4 rounded-full shadow-lg z-10 transition-colors duration-300`}>
         {selectedAudio ? (
           <div className="flex items-center gap-4">
             <button
@@ -597,7 +634,7 @@ export function EMDRProcessor() {
               )}
             </button>
             
-            <div className="text-white text-center">
+            <div className={theme === 'dark' ? 'text-white' : 'text-gray-800'}>
               <div className="font-medium">{selectedAudio.name}</div>
             </div>
           </div>

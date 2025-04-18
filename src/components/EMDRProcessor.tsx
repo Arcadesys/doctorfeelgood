@@ -16,12 +16,14 @@ export function EMDRProcessor() {
   const [selectedAudio, setSelectedAudio] = useState<AudioFile | null>(null);
   const [audioFiles, setAudioFiles] = useState<AudioFile[]>([]);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [showUploadTip, setShowUploadTip] = useState(false);
   
   const menuRef = useRef<HTMLDivElement>(null);
   const menuOpenSoundRef = useRef<HTMLAudioElement>(null);
   const menuCloseSoundRef = useRef<HTMLAudioElement>(null);
   const audioPlayerRef = useRef<HTMLAudioElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const mainFileInputRef = useRef<HTMLInputElement>(null);
   
   // Load audio files from localStorage on component mount
   useEffect(() => {
@@ -41,6 +43,16 @@ export function EMDRProcessor() {
     const lastSelectedAudio = localStorage.getItem('selectedAudio');
     if (lastSelectedAudio) {
       setSelectedAudio(JSON.parse(lastSelectedAudio));
+    }
+
+    // Show upload tip if no files have been uploaded yet
+    if (!localStorage.getItem('uploadTipShown')) {
+      setShowUploadTip(true);
+      // Set a timeout to hide the tip after 5 seconds
+      setTimeout(() => {
+        setShowUploadTip(false);
+        localStorage.setItem('uploadTipShown', 'true');
+      }, 5000);
     }
   }, []);
   
@@ -173,14 +185,21 @@ export function EMDRProcessor() {
         // Play a success sound
         const successSound = new Audio('/sounds/upload-success.mp3');
         successSound.play().catch(e => console.log('Could not play success sound', e));
+        
+        // Show the menu to see the uploaded file
+        if (!isMenuOpen) {
+          toggleMenu();
+        }
       }
     };
     
     reader.readAsDataURL(file);
     
     // Reset the file input
-    if (fileInputRef.current) {
+    if (e.target === fileInputRef.current) {
       fileInputRef.current.value = '';
+    } else if (e.target === mainFileInputRef.current) {
+      mainFileInputRef.current.value = '';
     }
   };
 
@@ -207,6 +226,32 @@ export function EMDRProcessor() {
           <line x1="3" y1="18" x2="21" y2="18"></line>
         </svg>
       </button>
+      
+      {/* Main Upload Button (always visible) */}
+      <div className="fixed bottom-6 right-6 z-10">
+        <label className="bg-green-600 hover:bg-green-500 text-white rounded-full p-4 shadow-lg flex items-center justify-center cursor-pointer transform hover:scale-105 transition-transform duration-200" aria-label="Upload Music">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          <input 
+            ref={mainFileInputRef}
+            type="file" 
+            accept="audio/*" 
+            className="hidden" 
+            onChange={handleFileUpload}
+          />
+        </label>
+        
+        {/* Upload Tip */}
+        {showUploadTip && (
+          <div className="absolute bottom-16 right-0 bg-white text-black p-3 rounded-lg shadow-lg text-sm w-48 animate-pulse">
+            Click here to upload your music!
+            <div className="absolute -bottom-2 right-6 w-0 h-0 border-l-8 border-l-transparent border-t-8 border-t-white border-r-8 border-r-transparent"></div>
+          </div>
+        )}
+      </div>
 
       {/* Sliding Menu */}
       <div 
@@ -266,7 +311,7 @@ export function EMDRProcessor() {
             )}
           </div>
           
-          {/* Upload Button */}
+          {/* Upload Button in Menu */}
           <div className="mt-4">
             <label className="bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-4 rounded w-full flex items-center justify-center cursor-pointer">
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2">

@@ -2,6 +2,7 @@
 
 // Types for audio engine
 export type OscillatorType = 'sine' | 'square' | 'sawtooth' | 'triangle';
+export type AudioMode = 'synthesizer' | 'audioTrack';
 
 export interface ADSREnvelope {
   attack: number;  // Time in seconds
@@ -16,6 +17,7 @@ export interface ContactSoundConfig {
   duration: number;
   oscillatorType: OscillatorType;
   volume: number;
+  enabled: boolean;
 }
 
 export interface ConstantToneConfig {
@@ -25,16 +27,25 @@ export interface ConstantToneConfig {
   audioPath?: string;
   volume: number;
   envelope: ADSREnvelope;
+  enabled: boolean;
+}
+
+export interface AudioTrackConfig {
+  volume: number;
+  loop: boolean;
+  filePath: string;
 }
 
 // Main Audio Engine Class
 export class AudioEngine {
   private context: AudioContext | null = null;
-  private constantToneNode: OscillatorNode | MediaElementAudioSourceNode | null = null;
+  private constantToneNode: OscillatorNode | null = null;
+  private audioTrackNode: MediaElementAudioSourceNode | null = null;
   private gainNode: GainNode | null = null;
   private pannerNode: StereoPannerNode | null = null;
   private audioElement: HTMLAudioElement | null = null;
   private isPlaying = false;
+  private currentMode: AudioMode = 'synthesizer';
   
   // Configuration
   private contactSoundConfig: ContactSoundConfig = {
@@ -42,7 +53,8 @@ export class AudioEngine {
     rightFrequency: 440,
     duration: 0.1,
     oscillatorType: 'sine',
-    volume: 0.5
+    volume: 0.5,
+    enabled: true
   };
   
   private constantToneConfig: ConstantToneConfig = {
@@ -55,7 +67,14 @@ export class AudioEngine {
       decay: 0.2,
       sustain: 0.7,
       release: 0.5
-    }
+    },
+    enabled: true
+  };
+  
+  private audioTrackConfig: AudioTrackConfig = {
+    volume: 0.7,
+    loop: true,
+    filePath: '/audio/sine-440hz.mp3'
   };
 
   // Initialize the audio engine
@@ -87,7 +106,7 @@ export class AudioEngine {
   
   // Clean up and release resources
   public dispose(): void {
-    this.stopConstantTone();
+    this.stopAll();
     
     if (this.context) {
       this.context.close();
@@ -97,11 +116,28 @@ export class AudioEngine {
     this.gainNode = null;
     this.pannerNode = null;
     this.constantToneNode = null;
+    this.audioTrackNode = null;
   }
   
-  // Play a contact sound with panning
+  // Set audio mode and stop any conflicting playback
+  public setAudioMode(mode: AudioMode): void {
+    if (this.currentMode === mode) return;
+    
+    // Stop current playback
+    this.stopAll();
+    
+    this.currentMode = mode;
+    console.log(`Audio mode changed to: ${mode}`);
+  }
+  
+  // Get current audio mode
+  public getAudioMode(): AudioMode {
+    return this.currentMode;
+  }
+  
+  // Play a contact sound with panning (only in synthesizer mode)
   public playContactSound(isRightSide: boolean): void {
-    if (!this.context) return;
+    if (!this.context || !this.contactSoundConfig.enabled || this.currentMode !== 'synthesizer') return;
     
     try {
       // Create oscillator for contact sound
@@ -143,30 +179,86 @@ export class AudioEngine {
     }
   }
   
-  // Start playing constant tone
-  public startConstantTone(): boolean {
-    if (!this.context || this.isPlaying) return false;
+  // Start playing based on current mode
+  public startPlayback(): boolean {
+    if (!this.context) return false;
     
     try {
-      if (this.constantToneConfig.isOscillator) {
-        return this.startOscillator();
-      } else if (this.audioElement) {
-        return this.startAudioElement();
+      if (this.currentMode === 'synthesizer') {
+        return this.startConstantTone();
+      } else if (this.currentMode === 'audioTrack') {
+        return this.startAudioTrack();
       }
       return false;
     } catch (error) {
-      console.error('Error starting constant tone:', error);
+      console.error('Error starting playback:', error);
+      return false;
+    }
+  }
+  
+  // Stop all audio playback
+  public stopAll(): void {
+    if (this.currentMode === 'synthesizer') {
+      this.stopConstantTone();
+    } else if (this.currentMode === 'audioTrack') {
+      this.stopAudioTrack();
+    }
+  }
+  
+  // Start playing constant tone (synthesizer mode)
+  private startConstantTone(): boolean {
+    if (!this.context || this.isPlaying || !this.constantToneConfig.enabled || this.currentMode !== 'synthesizer') return false;
+    
+    try {
+      // Create and configure oscillator
+      const oscillator = this.context.createOscillator();
+      oscillator.type = this.constantToneConfig.oscillatorType;
+      oscillator.frequency.value = this.constantToneConfig.frequency;
+      
+      // Apply ADSR envelope
+      const envelope = this.constantToneConfig.envelope;
+      const currentTime = this.context.currentTime;
+      
+      // Initial gain to 0
+      if (this.gainNode) {
+        this.gainNode.gain.setValueAtTime(0, currentTime);
+        
+        // Attack
+        this.gainNode.gain.linearRampToValueAtTime(
+          this.constantToneConfig.volume, 
+          currentTime + envelope.attack
+        );
+        
+        // Decay and sustain
+        this.gainNode.gain.linearRampToValueAtTime(
+          this.constantToneConfig.volume * envelope.sustain, 
+          currentTime + envelope.attack + envelope.decay
+        );
+      }
+      
+      // Connect and start
+      if (this.gainNode) {
+        oscillator.connect(this.gainNode);
+        oscillator.start();
+        
+        this.constantToneNode = oscillator;
+        this.isPlaying = true;
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Error starting oscillator:', error);
       return false;
     }
   }
   
   // Stop playing constant tone
-  public stopConstantTone(): void {
-    if (!this.isPlaying) return;
+  private stopConstantTone(): void {
+    if (!this.isPlaying || this.currentMode !== 'synthesizer') return;
     
     try {
-      if (this.constantToneConfig.isOscillator && this.constantToneNode) {
-        const oscillator = this.constantToneNode as OscillatorNode;
+      if (this.constantToneNode) {
+        const oscillator = this.constantToneNode;
         
         // Apply release envelope
         if (this.gainNode && this.context) {
@@ -185,13 +277,62 @@ export class AudioEngine {
           oscillator.disconnect();
           this.constantToneNode = null;
         }
-      } else if (this.audioElement) {
-        this.audioElement.pause();
       }
       
       this.isPlaying = false;
     } catch (error) {
       console.error('Error stopping constant tone:', error);
+    }
+  }
+  
+  // Start playing audio track
+  private startAudioTrack(): boolean {
+    if (!this.context || this.isPlaying || this.currentMode !== 'audioTrack' || !this.audioElement) return false;
+    
+    try {
+      // Set up audio element if not already connected
+      if (!this.audioTrackNode) {
+        const source = this.context.createMediaElementSource(this.audioElement);
+        if (this.gainNode) {
+          source.connect(this.gainNode);
+          this.audioTrackNode = source;
+        }
+      }
+      
+      // Configure audio element
+      this.audioElement.loop = this.audioTrackConfig.loop;
+      this.audioElement.src = this.audioTrackConfig.filePath;
+      
+      // Set volume
+      if (this.gainNode) {
+        this.gainNode.gain.value = this.audioTrackConfig.volume;
+      }
+      
+      // Play audio element
+      return this.audioElement.play()
+        .then(() => {
+          this.isPlaying = true;
+          return true;
+        })
+        .catch(error => {
+          console.error('Error playing audio track:', error);
+          return false;
+        });
+    } catch (error) {
+      console.error('Error starting audio track:', error);
+      return false;
+    }
+  }
+  
+  // Stop playing audio track
+  private stopAudioTrack(): void {
+    if (!this.isPlaying || this.currentMode !== 'audioTrack' || !this.audioElement) return;
+    
+    try {
+      this.audioElement.pause();
+      this.isPlaying = false;
+    } catch (error) {
+      console.error('Error stopping audio track:', error);
     }
   }
   
@@ -220,8 +361,8 @@ export class AudioEngine {
     
     // If oscillator type changed while playing, restart with new type
     const restartNeeded = this.isPlaying && 
-      (this.constantToneConfig.isOscillator !== newConfig.isOscillator ||
-       this.constantToneConfig.oscillatorType !== newConfig.oscillatorType ||
+      this.currentMode === 'synthesizer' &&
+      (this.constantToneConfig.oscillatorType !== newConfig.oscillatorType ||
        this.constantToneConfig.frequency !== newConfig.frequency);
        
     this.constantToneConfig = newConfig;
@@ -232,74 +373,32 @@ export class AudioEngine {
     }
   }
   
-  // Private method to start oscillator
-  private startOscillator(): boolean {
-    if (!this.context || !this.gainNode) return false;
+  // Update audio track configuration
+  public updateAudioTrackConfig(config: Partial<AudioTrackConfig>): void {
+    const newConfig = { ...this.audioTrackConfig, ...config };
     
-    try {
-      // Create and configure oscillator
-      const oscillator = this.context.createOscillator();
-      oscillator.type = this.constantToneConfig.oscillatorType;
-      oscillator.frequency.value = this.constantToneConfig.frequency;
+    // If file path changed while playing, restart with new file
+    const restartNeeded = this.isPlaying && 
+      this.currentMode === 'audioTrack' &&
+      this.audioTrackConfig.filePath !== newConfig.filePath;
       
-      // Apply ADSR envelope
-      const envelope = this.constantToneConfig.envelope;
-      const currentTime = this.context.currentTime;
-      
-      // Initial gain to 0
-      this.gainNode.gain.setValueAtTime(0, currentTime);
-      
-      // Attack
-      this.gainNode.gain.linearRampToValueAtTime(
-        this.constantToneConfig.volume, 
-        currentTime + envelope.attack
-      );
-      
-      // Decay and sustain
-      this.gainNode.gain.linearRampToValueAtTime(
-        this.constantToneConfig.volume * envelope.sustain, 
-        currentTime + envelope.attack + envelope.decay
-      );
-      
-      // Connect and start
-      oscillator.connect(this.gainNode);
-      oscillator.start();
-      
-      this.constantToneNode = oscillator;
-      this.isPlaying = true;
-      return true;
-    } catch (error) {
-      console.error('Error starting oscillator:', error);
-      return false;
-    }
-  }
-  
-  // Private method to start audio element
-  private startAudioElement(): boolean {
-    if (!this.context || !this.audioElement || !this.gainNode) return false;
+    this.audioTrackConfig = newConfig;
     
-    try {
-      // Create media source if needed
-      if (!this.constantToneNode) {
-        const source = this.context.createMediaElementSource(this.audioElement);
-        source.connect(this.gainNode);
-        this.constantToneNode = source;
-      }
-      
-      // Set volume
-      this.gainNode.gain.value = this.constantToneConfig.volume;
-      
-      // Play the audio
-      this.audioElement.play().then(() => {
-        this.isPlaying = true;
-      }).catch(error => {
-        console.error('Error playing audio element:', error);
+    if (restartNeeded && this.audioElement) {
+      const currentTime = this.audioElement.currentTime;
+      this.stopAudioTrack();
+      this.audioElement.src = newConfig.filePath;
+      this.startAudioTrack().then(() => {
+        if (this.audioElement) {
+          // Try to restore position
+          this.audioElement.currentTime = currentTime;
+        }
       });
-      
-      return true;
-    } catch (error) {
-      console.error('Error starting audio element:', error);
-      return false;
+    }
+    
+    // Update loop setting even if not playing
+    if (this.audioElement && this.audioTrackConfig.loop !== newConfig.loop) {
+      this.audioElement.loop = newConfig.loop;
     }
   }
   
@@ -310,6 +409,10 @@ export class AudioEngine {
   
   public getConstantToneConfig(): ConstantToneConfig {
     return { ...this.constantToneConfig };
+  }
+  
+  public getAudioTrackConfig(): AudioTrackConfig {
+    return { ...this.audioTrackConfig };
   }
   
   // Check if audio is currently playing

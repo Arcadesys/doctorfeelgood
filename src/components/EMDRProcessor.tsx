@@ -2,7 +2,14 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { AudioEngine, OscillatorType, ContactSoundConfig, ConstantToneConfig } from '../lib/audioEngine';
+import { 
+  AudioEngine, 
+  OscillatorType, 
+  ContactSoundConfig, 
+  ConstantToneConfig,
+  AudioTrackConfig,
+  AudioMode
+} from '../lib/audioEngine';
 
 // Simple version without the File System Access API
 type AudioFile = {
@@ -29,6 +36,7 @@ export function EMDRProcessor() {
   const [a11yMessage, setA11yMessage] = useState<string>('Visual target ready. Audio controls available at bottom of screen.');
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [panValue, setPanValue] = useState(0); // -1 (left) to 1 (right)
+  const [audioMode, setAudioMode] = useState<AudioMode>('synthesizer');
   
   // Audio engine settings
   const [constantToneConfig, setConstantToneConfig] = useState<ConstantToneConfig>({
@@ -41,7 +49,8 @@ export function EMDRProcessor() {
       decay: 0.2,
       sustain: 0.7,
       release: 0.5
-    }
+    },
+    enabled: true
   });
   
   const [contactSoundConfig, setContactSoundConfig] = useState<ContactSoundConfig>({
@@ -49,7 +58,14 @@ export function EMDRProcessor() {
     rightFrequency: 440,
     duration: 0.1,
     oscillatorType: 'sine',
-    volume: 0.5
+    volume: 0.5,
+    enabled: true
+  });
+  
+  const [audioTrackConfig, setAudioTrackConfig] = useState<AudioTrackConfig>({
+    volume: 0.7,
+    loop: true,
+    filePath: '/audio/sine-440hz.mp3'
   });
   
   // Animation state
@@ -102,6 +118,9 @@ export function EMDRProcessor() {
         audioEngine.updateConstantToneConfig(constantToneConfig);
         audioEngine.updateContactSoundConfig(contactSoundConfig);
         
+        // Set initial audio mode
+        audioEngine.setAudioMode(audioMode);
+        
         // Store in ref
         audioEngineRef.current = audioEngine;
       } else {
@@ -130,6 +149,29 @@ export function EMDRProcessor() {
       audioEngineRef.current.updateContactSoundConfig(contactSoundConfig);
     }
   }, [contactSoundConfig]);
+  
+  useEffect(() => {
+    if (audioEngineRef.current) {
+      audioEngineRef.current.updateAudioTrackConfig(audioTrackConfig);
+    }
+  }, [audioTrackConfig]);
+  
+  // Sync audio mode when it changes
+  useEffect(() => {
+    if (audioEngineRef.current && audioEngineRef.current.getAudioMode() !== audioMode) {
+      // Stop any current playback
+      if (isPlaying) {
+        audioEngineRef.current.stopAll();
+        setIsPlaying(false);
+      }
+      
+      // Set new mode
+      audioEngineRef.current.setAudioMode(audioMode);
+      
+      // Update accessibility message
+      setA11yMessage(`Audio mode changed to ${audioMode === 'synthesizer' ? 'synthesizer' : 'audio track'}`);
+    }
+  }, [audioMode, isPlaying]);
   
   // Load audio metadata on mount
   useEffect(() => {
@@ -413,8 +455,8 @@ export function EMDRProcessor() {
       setAnimationFrameId(animationIdRef.current);
       
       // Start constant tone
-      if (audioEngineRef.current) {
-        audioEngineRef.current.startConstantTone();
+      if (audioEngineRef.current && !audioEngineRef.current.getIsPlaying()) {
+        audioEngineRef.current.startPlayback();
       }
     } else {
       // Stop animation and clear canvas when paused
@@ -428,8 +470,8 @@ export function EMDRProcessor() {
         setPanValue(0);
         
         // Stop constant tone
-        if (audioEngineRef.current) {
-          audioEngineRef.current.stopConstantTone();
+        if (audioEngineRef.current && audioEngineRef.current.getIsPlaying()) {
+          audioEngineRef.current.stopAll();
         }
         
         // Clear canvas
@@ -457,8 +499,8 @@ export function EMDRProcessor() {
         animationIdRef.current = null;
         
         // Stop constant tone
-        if (audioEngineRef.current) {
-          audioEngineRef.current.stopConstantTone();
+        if (audioEngineRef.current && audioEngineRef.current.getIsPlaying()) {
+          audioEngineRef.current.stopAll();
         }
       }
     };
@@ -599,19 +641,12 @@ export function EMDRProcessor() {
   
   // Handle audio playback controls
   const togglePlayPause = () => {
-    if (!selectedAudio) return;
-    
     console.log("togglePlayPause: Current isPlaying state:", isPlaying);
     
     if (isPlaying) {
       // Stop playback through audio engine
       if (audioEngineRef.current) {
-        audioEngineRef.current.stopConstantTone();
-      }
-      
-      // Also pause the audio element for backup
-      if (audioPlayerRef.current) {
-        audioPlayerRef.current.pause();
+        audioEngineRef.current.stopAll();
       }
       
       setA11yMessage('Paused. Visual target stopped.');
@@ -620,28 +655,23 @@ export function EMDRProcessor() {
       console.log("Setting isPlaying to false");
       setIsPlaying(false);
     } else {
-      // Start through audio engine first
+      // Start through audio engine
       let success = false;
       if (audioEngineRef.current) {
-        success = audioEngineRef.current.startConstantTone();
+        success = audioEngineRef.current.startPlayback();
       }
       
-      // If that fails, try direct audio element control
-      if (!success && audioPlayerRef.current) {
-        audioPlayerRef.current.play()
-          .then(() => {
-            setA11yMessage(`Playing ${selectedAudio.name}. Visual target active.`);
-            console.log("Setting isPlaying to true after successful play");
-            setIsPlaying(true);
-          })
-          .catch(error => console.error("Error playing audio:", error));
-      } else if (success) {
-        // Audio engine started successfully
-        setA11yMessage(`Playing ${selectedAudio.name}. Visual target active.`);
+      if (success) {
+        // Update message based on mode
+        const mode = audioEngineRef.current?.getAudioMode() || 'synthesizer';
+        setA11yMessage(`Playing ${mode === 'synthesizer' ? 'synthesizer' : 'audio track'}. Visual target active.`);
+        
         // Play status sound
         playStatusSoundRef.current?.play().catch(e => console.error('Error playing status sound:', e));
         console.log("Setting isPlaying to true");
         setIsPlaying(true);
+      } else {
+        console.error("Failed to start playback");
       }
     }
   };
@@ -739,6 +769,11 @@ export function EMDRProcessor() {
         [parameter]: value
       }
     }));
+  };
+
+  // Handle audio mode change
+  const handleAudioModeChange = (mode: AudioMode) => {
+    setAudioMode(mode);
   };
 
   return (
@@ -852,214 +887,337 @@ export function EMDRProcessor() {
           </div>
         </div>
         
-        {/* Constant Tone Section */}
+        {/* Audio Mode Selection */}
         <div className="mb-6">
-          <h3 className="text-xl font-bold text-white dark:text-white text-gray-800 mb-4">Constant Tone</h3>
+          <h3 className="text-xl font-bold text-white dark:text-white text-gray-800 mb-4">Audio Mode</h3>
           
           <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
-            <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Oscillator Type</h4>
-            <div className="grid grid-cols-2 gap-2 mb-4">
-              {(['sine', 'square', 'sawtooth', 'triangle'] as OscillatorType[]).map(type => (
-                <button 
-                  key={type}
-                  onClick={() => handleOscillatorTypeChange(type)}
-                  className={`p-2 rounded text-sm ${
-                    constantToneConfig.oscillatorType === type 
-                    ? 'bg-blue-600 text-white' 
-                    : isDarkMode 
-                      ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' 
-                      : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-                  }`}
-                  aria-label={`Oscillator type ${type}`}
-                  aria-pressed={constantToneConfig.oscillatorType === type}
-                >
-                  {type.charAt(0).toUpperCase() + type.slice(1)}
-                </button>
-              ))}
-            </div>
-            
-            <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-              Frequency: {constantToneConfig.frequency} Hz
-            </h4>
-            <input 
-              type="range" 
-              min="220" 
-              max="880" 
-              step="1"
-              value={constantToneConfig.frequency}
-              onChange={(e) => setConstantToneConfig(prev => ({
-                ...prev,
-                frequency: Number(e.target.value)
-              }))}
-              className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer mb-4`}
-              aria-label="Frequency"
-            />
-            
-            <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>ADSR Envelope</h4>
-            
-            <div className="mb-3">
-              <div className="flex justify-between mb-1">
-                <label className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                  Attack: {constantToneConfig.envelope.attack.toFixed(2)}s
-                </label>
-              </div>
-              <input 
-                type="range" 
-                min="0.01" 
-                max="2" 
-                step="0.01"
-                value={constantToneConfig.envelope.attack}
-                onChange={(e) => handleEnvelopeChange('attack', Number(e.target.value))}
-                className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
-                aria-label="Attack"
-              />
-            </div>
-            
-            <div className="mb-3">
-              <div className="flex justify-between mb-1">
-                <label className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                  Decay: {constantToneConfig.envelope.decay.toFixed(2)}s
-                </label>
-              </div>
-              <input 
-                type="range" 
-                min="0.01" 
-                max="2" 
-                step="0.01"
-                value={constantToneConfig.envelope.decay}
-                onChange={(e) => handleEnvelopeChange('decay', Number(e.target.value))}
-                className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
-                aria-label="Decay"
-              />
-            </div>
-            
-            <div className="mb-3">
-              <div className="flex justify-between mb-1">
-                <label className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                  Sustain: {constantToneConfig.envelope.sustain.toFixed(2)}
-                </label>
-              </div>
-              <input 
-                type="range" 
-                min="0.01" 
-                max="1" 
-                step="0.01"
-                value={constantToneConfig.envelope.sustain}
-                onChange={(e) => handleEnvelopeChange('sustain', Number(e.target.value))}
-                className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
-                aria-label="Sustain"
-              />
-            </div>
-            
-            <div className="mb-3">
-              <div className="flex justify-between mb-1">
-                <label className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                  Release: {constantToneConfig.envelope.release.toFixed(2)}s
-                </label>
-              </div>
-              <input 
-                type="range" 
-                min="0.01" 
-                max="3" 
-                step="0.01"
-                value={constantToneConfig.envelope.release}
-                onChange={(e) => handleEnvelopeChange('release', Number(e.target.value))}
-                className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
-                aria-label="Release"
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <button 
+                onClick={() => handleAudioModeChange('synthesizer')}
+                className={`p-4 rounded text-center ${
+                  audioMode === 'synthesizer' 
+                  ? 'bg-blue-600 text-white' 
+                  : isDarkMode 
+                    ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' 
+                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                }`}
+                aria-pressed={audioMode === 'synthesizer'}
+              >
+                <div className="font-bold mb-1">Synthesizer</div>
+                <div className="text-xs">Oscillator tone with contact beeps</div>
+              </button>
+              
+              <button 
+                onClick={() => handleAudioModeChange('audioTrack')}
+                className={`p-4 rounded text-center ${
+                  audioMode === 'audioTrack' 
+                  ? 'bg-blue-600 text-white' 
+                  : isDarkMode 
+                    ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' 
+                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                }`}
+                aria-pressed={audioMode === 'audioTrack'}
+              >
+                <div className="font-bold mb-1">Audio Track</div>
+                <div className="text-xs">Play your music or audio file</div>
+              </button>
             </div>
           </div>
         </div>
         
-        {/* Contact Sounds Section */}
-        <div className="mb-6">
-          <h3 className="text-xl font-bold text-white dark:text-white text-gray-800 mb-4">Contact Sounds</h3>
-          
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
-            <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Sound Type</h4>
-            <div className="grid grid-cols-2 gap-2 mb-4">
-              {(['sine', 'square', 'sawtooth', 'triangle'] as OscillatorType[]).map(type => (
-                <button 
-                  key={type}
-                  onClick={() => setContactSoundConfig(prev => ({...prev, oscillatorType: type}))}
-                  className={`p-2 rounded text-sm ${
-                    contactSoundConfig.oscillatorType === type 
-                    ? 'bg-blue-600 text-white' 
-                    : isDarkMode 
-                      ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' 
-                      : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-                  }`}
-                  aria-label={`Contact sound type ${type}`}
-                  aria-pressed={contactSoundConfig.oscillatorType === type}
-                >
-                  {type.charAt(0).toUpperCase() + type.slice(1)}
-                </button>
-              ))}
+        {/* Synthesizer Mode Settings - only shown when in synthesizer mode */}
+        {audioMode === 'synthesizer' && (
+          <>
+            {/* Constant Tone Section */}
+            <div className="mb-6">
+              <h3 className="text-xl font-bold text-white dark:text-white text-gray-800 mb-4">Constant Tone</h3>
+              
+              <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
+                {/* Enable/disable toggle */}
+                <div className="flex items-center justify-between mb-4">
+                  <span className={`font-medium ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Enable Constant Tone</span>
+                  <button 
+                    onClick={() => setConstantToneConfig(prev => ({...prev, enabled: !prev.enabled}))}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${constantToneConfig.enabled ? 'bg-blue-600' : 'bg-gray-200'}`}
+                    role="switch"
+                    aria-checked={constantToneConfig.enabled}
+                  >
+                    <span 
+                      className={`${constantToneConfig.enabled ? 'translate-x-6' : 'translate-x-1'} inline-block h-4 w-4 transform rounded-full bg-white transition-transform`}
+                    />
+                  </button>
+                </div>
+                
+                <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Oscillator Type</h4>
+                <div className="grid grid-cols-2 gap-2 mb-4">
+                  {(['sine', 'square', 'sawtooth', 'triangle'] as OscillatorType[]).map(type => (
+                    <button 
+                      key={type}
+                      onClick={() => handleOscillatorTypeChange(type)}
+                      className={`p-2 rounded text-sm ${
+                        constantToneConfig.oscillatorType === type 
+                        ? 'bg-blue-600 text-white' 
+                        : isDarkMode 
+                          ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' 
+                          : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                      }`}
+                      aria-label={`Oscillator type ${type}`}
+                      aria-pressed={constantToneConfig.oscillatorType === type}
+                      disabled={!constantToneConfig.enabled}
+                    >
+                      {type.charAt(0).toUpperCase() + type.slice(1)}
+                    </button>
+                  ))}
+                </div>
+                
+                <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                  Frequency: {constantToneConfig.frequency} Hz
+                </h4>
+                <input 
+                  type="range" 
+                  min="220" 
+                  max="880" 
+                  step="1"
+                  value={constantToneConfig.frequency}
+                  onChange={(e) => setConstantToneConfig(prev => ({
+                    ...prev,
+                    frequency: Number(e.target.value)
+                  }))}
+                  className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer mb-4`}
+                  aria-label="Frequency"
+                />
+                
+                <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>ADSR Envelope</h4>
+                
+                <div className="mb-3">
+                  <div className="flex justify-between mb-1">
+                    <label className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                      Attack: {constantToneConfig.envelope.attack.toFixed(2)}s
+                    </label>
+                  </div>
+                  <input 
+                    type="range" 
+                    min="0.01" 
+                    max="2" 
+                    step="0.01"
+                    value={constantToneConfig.envelope.attack}
+                    onChange={(e) => handleEnvelopeChange('attack', Number(e.target.value))}
+                    className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
+                    aria-label="Attack"
+                  />
+                </div>
+                
+                <div className="mb-3">
+                  <div className="flex justify-between mb-1">
+                    <label className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                      Decay: {constantToneConfig.envelope.decay.toFixed(2)}s
+                    </label>
+                  </div>
+                  <input 
+                    type="range" 
+                    min="0.01" 
+                    max="2" 
+                    step="0.01"
+                    value={constantToneConfig.envelope.decay}
+                    onChange={(e) => handleEnvelopeChange('decay', Number(e.target.value))}
+                    className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
+                    aria-label="Decay"
+                  />
+                </div>
+                
+                <div className="mb-3">
+                  <div className="flex justify-between mb-1">
+                    <label className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                      Sustain: {constantToneConfig.envelope.sustain.toFixed(2)}
+                    </label>
+                  </div>
+                  <input 
+                    type="range" 
+                    min="0.01" 
+                    max="1" 
+                    step="0.01"
+                    value={constantToneConfig.envelope.sustain}
+                    onChange={(e) => handleEnvelopeChange('sustain', Number(e.target.value))}
+                    className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
+                    aria-label="Sustain"
+                  />
+                </div>
+                
+                <div className="mb-3">
+                  <div className="flex justify-between mb-1">
+                    <label className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                      Release: {constantToneConfig.envelope.release.toFixed(2)}s
+                    </label>
+                  </div>
+                  <input 
+                    type="range" 
+                    min="0.01" 
+                    max="3" 
+                    step="0.01"
+                    value={constantToneConfig.envelope.release}
+                    onChange={(e) => handleEnvelopeChange('release', Number(e.target.value))}
+                    className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
+                    aria-label="Release"
+                  />
+                </div>
+              </div>
             </div>
             
-            <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-              Left Contact: {contactSoundConfig.leftFrequency} Hz
-            </h4>
-            <input 
-              type="range" 
-              min="220" 
-              max="880" 
-              step="1"
-              value={contactSoundConfig.leftFrequency}
-              onChange={(e) => handleContactFrequencyChange(false, Number(e.target.value))}
-              className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer mb-4`}
-              aria-label="Left contact frequency"
-            />
+            {/* Contact Sounds Section */}
+            <div className="mb-6">
+              <h3 className="text-xl font-bold text-white dark:text-white text-gray-800 mb-4">Contact Sounds</h3>
+              
+              <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
+                {/* Enable/disable toggle */}
+                <div className="flex items-center justify-between mb-4">
+                  <span className={`font-medium ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Enable Contact Sounds</span>
+                  <button 
+                    onClick={() => setContactSoundConfig(prev => ({...prev, enabled: !prev.enabled}))}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${contactSoundConfig.enabled ? 'bg-blue-600' : 'bg-gray-200'}`}
+                    role="switch"
+                    aria-checked={contactSoundConfig.enabled}
+                  >
+                    <span 
+                      className={`${contactSoundConfig.enabled ? 'translate-x-6' : 'translate-x-1'} inline-block h-4 w-4 transform rounded-full bg-white transition-transform`}
+                    />
+                  </button>
+                </div>
+                
+                <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Sound Type</h4>
+                <div className="grid grid-cols-2 gap-2 mb-4">
+                  {(['sine', 'square', 'sawtooth', 'triangle'] as OscillatorType[]).map(type => (
+                    <button 
+                      key={type}
+                      onClick={() => setContactSoundConfig(prev => ({...prev, oscillatorType: type}))}
+                      className={`p-2 rounded text-sm ${
+                        contactSoundConfig.oscillatorType === type 
+                        ? 'bg-blue-600 text-white' 
+                        : isDarkMode 
+                          ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' 
+                          : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                      }`}
+                      aria-label={`Contact sound type ${type}`}
+                      aria-pressed={contactSoundConfig.oscillatorType === type}
+                    >
+                      {type.charAt(0).toUpperCase() + type.slice(1)}
+                    </button>
+                  ))}
+                </div>
+                
+                <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                  Left Contact: {contactSoundConfig.leftFrequency} Hz
+                </h4>
+                <input 
+                  type="range" 
+                  min="220" 
+                  max="880" 
+                  step="1"
+                  value={contactSoundConfig.leftFrequency}
+                  onChange={(e) => handleContactFrequencyChange(false, Number(e.target.value))}
+                  className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer mb-4`}
+                  aria-label="Left contact frequency"
+                />
+                
+                <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                  Right Contact: {contactSoundConfig.rightFrequency} Hz
+                </h4>
+                <input 
+                  type="range" 
+                  min="220" 
+                  max="880" 
+                  step="1"
+                  value={contactSoundConfig.rightFrequency}
+                  onChange={(e) => handleContactFrequencyChange(true, Number(e.target.value))}
+                  className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer mb-4`}
+                  aria-label="Right contact frequency"
+                />
+                
+                <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                  Duration: {contactSoundConfig.duration.toFixed(2)}s
+                </h4>
+                <input 
+                  type="range" 
+                  min="0.05" 
+                  max="0.5" 
+                  step="0.01"
+                  value={contactSoundConfig.duration}
+                  onChange={(e) => setContactSoundConfig(prev => ({
+                    ...prev,
+                    duration: Number(e.target.value)
+                  }))}
+                  className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer mb-4`}
+                  aria-label="Contact sound duration"
+                />
+                
+                <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                  Volume: {Math.round(contactSoundConfig.volume * 100)}%
+                </h4>
+                <input 
+                  type="range" 
+                  min="0" 
+                  max="1" 
+                  step="0.01"
+                  value={contactSoundConfig.volume}
+                  onChange={(e) => setContactSoundConfig(prev => ({
+                    ...prev,
+                    volume: Number(e.target.value)
+                  }))}
+                  className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
+                  aria-label="Contact sound volume"
+                />
+              </div>
+            </div>
+          </>
+        )}
+        
+        {/* Audio Track Settings - only shown when in audioTrack mode */}
+        {audioMode === 'audioTrack' && (
+          <div className="mb-6">
+            <h3 className="text-xl font-bold text-white dark:text-white text-gray-800 mb-4">Audio Track</h3>
             
-            <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-              Right Contact: {contactSoundConfig.rightFrequency} Hz
-            </h4>
-            <input 
-              type="range" 
-              min="220" 
-              max="880" 
-              step="1"
-              value={contactSoundConfig.rightFrequency}
-              onChange={(e) => handleContactFrequencyChange(true, Number(e.target.value))}
-              className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer mb-4`}
-              aria-label="Right contact frequency"
-            />
-            
-            <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-              Duration: {contactSoundConfig.duration.toFixed(2)}s
-            </h4>
-            <input 
-              type="range" 
-              min="0.05" 
-              max="0.5" 
-              step="0.01"
-              value={contactSoundConfig.duration}
-              onChange={(e) => setContactSoundConfig(prev => ({
-                ...prev,
-                duration: Number(e.target.value)
-              }))}
-              className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer mb-4`}
-              aria-label="Contact sound duration"
-            />
-            
-            <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-              Volume: {Math.round(contactSoundConfig.volume * 100)}%
-            </h4>
-            <input 
-              type="range" 
-              min="0" 
-              max="1" 
-              step="0.01"
-              value={contactSoundConfig.volume}
-              onChange={(e) => setContactSoundConfig(prev => ({
-                ...prev,
-                volume: Number(e.target.value)
-              }))}
-              className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
-              aria-label="Contact sound volume"
-            />
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
+              <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Selected File</h4>
+              <div className={`p-3 rounded ${isDarkMode ? 'bg-gray-700' : 'bg-gray-100'} mb-4`}>
+                <p className={`${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
+                  {selectedAudio?.name || 'No audio file selected'}
+                </p>
+              </div>
+              
+              <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Loop Audio</h4>
+              <div className="flex items-center justify-between mb-4">
+                <span className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>Repeat track when finished</span>
+                <button 
+                  onClick={() => setAudioTrackConfig(prev => ({...prev, loop: !prev.loop}))}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${audioTrackConfig.loop ? 'bg-blue-600' : 'bg-gray-200'}`}
+                  role="switch"
+                  aria-checked={audioTrackConfig.loop}
+                >
+                  <span 
+                    className={`${audioTrackConfig.loop ? 'translate-x-6' : 'translate-x-1'} inline-block h-4 w-4 transform rounded-full bg-white transition-transform`}
+                  />
+                </button>
+              </div>
+              
+              <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                Volume: {Math.round(audioTrackConfig.volume * 100)}%
+              </h4>
+              <input 
+                type="range" 
+                min="0" 
+                max="1" 
+                step="0.01"
+                value={audioTrackConfig.volume}
+                onChange={(e) => setAudioTrackConfig(prev => ({
+                  ...prev,
+                  volume: Number(e.target.value)
+                }))}
+                className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer mb-4`}
+                aria-label="Audio track volume"
+              />
+            </div>
           </div>
-        </div>
+        )}
         
         {/* Audio Selection Section */}
         <div className="mb-6">

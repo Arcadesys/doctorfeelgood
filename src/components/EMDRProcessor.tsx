@@ -28,6 +28,27 @@ export function EMDRProcessor() {
     // In a real implementation, this would communicate with a backend service
     // that can access the filesystem directly
     const storedFiles = localStorage.getItem('audioFilesMeta');
+    
+    // In development, look for Outer Wilds.m4a on disk
+    if (process.env.NODE_ENV === 'development') {
+      try {
+        // For Next.js in development, we'll look in the public directory
+        const defaultFiles = [
+          { 
+            id: '1', 
+            name: 'Outer Wilds.m4a', 
+            lastUsed: new Date().toLocaleString(), 
+            path: '/music/Outer Wilds.m4a' 
+          }
+        ];
+        setAudioFiles(defaultFiles);
+        console.log('Development mode: Looking for Outer Wilds.m4a in public/music directory');
+        return;
+      } catch (error) {
+        console.error('Error accessing file in development:', error);
+      }
+    }
+    
     if (storedFiles) {
       setAudioFiles(JSON.parse(storedFiles));
     } else {
@@ -121,10 +142,16 @@ export function EMDRProcessor() {
     setSelectedAudio(file);
     
     // In a real implementation, this would access the file from the filesystem
-    // For this mock, we'll just simulate playback
     if (audioPlayerRef.current) {
-      // In a real app, we'd set the src to the actual file path
-      audioPlayerRef.current.src = '/sounds/menu-open.mp3'; // Just a placeholder sound
+      if (process.env.NODE_ENV === 'development' && file.name === 'Outer Wilds.m4a') {
+        // In development, use the actual file path relative to the public directory
+        audioPlayerRef.current.src = file.path || '/sounds/menu-open.mp3';
+        console.log('Playing actual file from path:', file.path);
+      } else {
+        // For this mock, we'll just simulate playback with a placeholder sound
+        audioPlayerRef.current.src = '/sounds/menu-open.mp3'; 
+      }
+      
       audioPlayerRef.current.play()
         .then(() => setIsPlaying(true))
         .catch(error => console.error("Error playing audio:", error));

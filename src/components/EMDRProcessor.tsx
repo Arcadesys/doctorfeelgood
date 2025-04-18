@@ -466,7 +466,7 @@ export function EMDRProcessor() {
       
       {/* Hamburger Menu Button */}
       <button 
-        className="absolute top-4 right-4 text-white z-20"
+        className={`absolute top-4 right-4 ${isDarkMode ? 'text-white' : 'text-gray-800'} z-20`}
         onClick={toggleMenu}
         aria-label="Toggle menu"
       >
@@ -534,15 +534,15 @@ export function EMDRProcessor() {
           
           {/* Upload Audio */}
           <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
-            <h4 className="font-bold mb-2">Upload Your Audio</h4>
+            <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Upload Your Audio</h4>
             <input 
               type="file" 
               accept="audio/*"
-              className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+              className={`w-full text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-500'} file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold ${isDarkMode ? 'file:bg-blue-900 file:text-blue-200' : 'file:bg-blue-50 file:text-blue-700'} ${isDarkMode ? 'hover:file:bg-blue-800' : 'hover:file:bg-blue-100'}`}
             />
             
             <button 
-              className="w-full mt-3 bg-blue-100 hover:bg-blue-200 text-blue-800 py-2 px-4 rounded flex items-center justify-center"
+              className={`w-full mt-3 ${isDarkMode ? 'bg-blue-900 hover:bg-blue-800 text-blue-200' : 'bg-blue-100 hover:bg-blue-200 text-blue-800'} py-2 px-4 rounded flex items-center justify-center`}
               onClick={() => {}}
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2">
@@ -554,21 +554,21 @@ export function EMDRProcessor() {
           
           {/* Sample Audio */}
           <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
-            <h4 className="font-bold mb-2">Sample Audio</h4>
+            <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Sample Audio</h4>
             <div className="grid grid-cols-2 gap-2">
-              <button className="bg-gray-100 p-3 rounded text-sm text-left hover:bg-gray-200">
+              <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-3 rounded text-sm text-left ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
                 White noise for focus and relaxation
               </button>
-              <button className="bg-gray-100 p-3 rounded text-sm text-left hover:bg-gray-200">
+              <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-3 rounded text-sm text-left ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
                 Clean 440Hz sine wave tone
               </button>
-              <button className="bg-gray-100 p-3 rounded text-sm text-left hover:bg-gray-200">
+              <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-3 rounded text-sm text-left ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
                 Deeper 220Hz sine wave tone
               </button>
-              <button className="bg-gray-100 p-3 rounded text-sm text-left hover:bg-gray-200">
+              <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-3 rounded text-sm text-left ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
                 Soft triangle wave for gentle stimulation
               </button>
-              <button className="bg-gray-100 p-3 rounded text-sm text-left hover:bg-gray-200">
+              <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-3 rounded text-sm text-left ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
                 Gentle pink noise for relaxation
               </button>
             </div>
@@ -581,67 +581,67 @@ export function EMDRProcessor() {
           
           {/* Session Timing */}
           <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
-            <h4 className="font-bold mb-2">Session Timing</h4>
+            <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Session Timing</h4>
             
             <div className="mb-4">
               <div className="flex justify-between mb-1">
-                <label className="text-sm">Start Time: 0:00</label>
+                <label className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>Start Time: 0:00</label>
               </div>
               <input 
                 type="range" 
                 min="0" 
                 max="100" 
-                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
               />
-              <p className="text-xs text-gray-500 mt-1">Position in the audio to start playback</p>
+              <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mt-1`}>Position in the audio to start playback</p>
             </div>
             
             <div className="mb-4">
               <div className="flex justify-between mb-1">
-                <label className="text-sm">Session Duration: 1:00</label>
+                <label className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>Session Duration: 1:00</label>
               </div>
               <input 
                 type="range" 
                 min="0" 
                 max="100" 
-                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
               />
-              <p className="text-xs text-gray-500 mt-1">How long the session should last before fading out</p>
+              <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mt-1`}>How long the session should last before fading out</p>
             </div>
             
             <div className="grid grid-cols-5 gap-2">
-              <button className="bg-gray-100 p-2 rounded text-xs hover:bg-gray-200">1:00</button>
-              <button className="bg-gray-100 p-2 rounded text-xs hover:bg-gray-200">3:00</button>
-              <button className="bg-gray-100 p-2 rounded text-xs hover:bg-gray-200">5:00</button>
-              <button className="bg-gray-100 p-2 rounded text-xs hover:bg-gray-200">10:00</button>
-              <button className="bg-gray-100 p-2 rounded text-xs hover:bg-gray-200">Full</button>
+              <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-2 rounded text-xs ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>1:00</button>
+              <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-2 rounded text-xs ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>3:00</button>
+              <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-2 rounded text-xs ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>5:00</button>
+              <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-2 rounded text-xs ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>10:00</button>
+              <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-2 rounded text-xs ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>Full</button>
             </div>
           </div>
           
           {/* Pan Settings */}
           <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
-            <h4 className="font-bold mb-2">Current Pan: 0.50 (Audio API: 0.00)</h4>
+            <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Current Pan: 0.50 (Audio API: 0.00)</h4>
             <div className="flex items-center mb-1">
-              <span className="text-xs">L</span>
+              <span className={`text-xs ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>L</span>
               <input 
                 type="range" 
                 min="0" 
                 max="100" 
-                className="flex-1 mx-2 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                className={`flex-1 mx-2 h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
               />
-              <span className="text-xs">R</span>
+              <span className={`text-xs ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>R</span>
             </div>
-            <p className="text-xs text-gray-500 mt-1">Manual control overrides sine wave while adjusting</p>
+            <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mt-1`}>Manual control overrides sine wave while adjusting</p>
           </div>
           
           {/* Volume Control */}
           <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
-            <h4 className="font-bold mb-2">Volume: 70%</h4>
+            <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Volume: 70%</h4>
             <input 
               type="range" 
               min="0" 
               max="100" 
-              className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+              className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
             />
           </div>
         </div>
@@ -668,7 +668,7 @@ export function EMDRProcessor() {
       {/* Full viewport canvas for visual target */}
       <canvas 
         ref={canvasRef}
-        className="fixed top-0 left-0 w-screen h-screen -z-10"
+        className={`fixed top-0 left-0 w-screen h-screen -z-10 ${isDarkMode ? '' : 'bg-white'}`}
         aria-label="EMDR visual target canvas"
         role="img"
         aria-live="polite"
@@ -680,7 +680,7 @@ export function EMDRProcessor() {
       </div>
       
       {/* Minimalist Audio Player Controls */}
-      <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-gray-800 bg-opacity-80 p-4 rounded-full shadow-lg z-10">
+      <div className={`fixed bottom-6 left-1/2 transform -translate-x-1/2 ${isDarkMode ? 'bg-gray-800' : 'bg-gray-200'} bg-opacity-80 p-4 rounded-full shadow-lg z-10`}>
         {selectedAudio ? (
           <div className="flex items-center gap-4">
             <button
@@ -700,7 +700,7 @@ export function EMDRProcessor() {
               )}
             </button>
             
-            <div className="text-white text-center">
+            <div className={`${isDarkMode ? 'text-white' : 'text-gray-900'} text-center`}>
               <div className="font-medium">{selectedAudio.name}</div>
             </div>
           </div>

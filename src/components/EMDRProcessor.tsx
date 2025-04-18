@@ -12,7 +12,7 @@ export function EMDRProcessor() {
       </p>
       
       <div className="flex flex-col sm:flex-row gap-4 w-full max-w-md mb-8">
-        <Link href="/panner" passHref className="flex-1">
+        <Link href="/" passHref className="flex-1">
           <button className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xl font-bold py-3 px-6 rounded">
             Simple Panner
           </button>

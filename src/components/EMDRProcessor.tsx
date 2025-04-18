@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, useAnimationControls } from 'framer-motion';
 import * as Tone from 'tone';
-import { AudioProcessor, createYouTubeAudioProcessor, resumeAudioContext } from '@/utils/audioUtils';
+import { AudioProcessor, createAudioProcessor, resumeAudioContext } from '@/utils/audioUtils';
 import { sampleAudioFiles, getRandomSampleAudio } from '@/utils/sampleAudio';
 
 // Define the shape options with their SVG paths
@@ -73,13 +73,13 @@ export function EMDRProcessor() {
   const [soundVolume, setSoundVolume] = useState(-10); // dB
   const [sound, setSound] = useState<{ playTone: (note: string, volume?: number) => void } | null>(null);
   
-  // YouTube integration
-  const [youtubeUrl, setYoutubeUrl] = useState('');
-  const [youtubeTitle, setYoutubeTitle] = useState('');
-  const [isLoadingYoutube, setIsLoadingYoutube] = useState(false);
-  const [youtubeError, setYoutubeError] = useState('');
-  const [youtubeAudio, setYoutubeAudio] = useState<AudioProcessor | null>(null);
-  const [youtubeEnabled, setYoutubeEnabled] = useState(false);
+  // Audio state
+  const [audioFile, setAudioFile] = useState<File | null>(null);
+  const [audioTitle, setAudioTitle] = useState('');
+  const [isLoadingAudio, setIsLoadingAudio] = useState(false);
+  const [audioError, setAudioError] = useState('');
+  const [audioProcessor, setAudioProcessor] = useState<AudioProcessor | null>(null);
+  const [audioEnabled, setAudioEnabled] = useState(false);
   
   // Sample audio integration
   const [sampleAudioId, setSampleAudioId] = useState('');
@@ -96,121 +96,108 @@ export function EMDRProcessor() {
     }
   }, []);
   
-  // Function to fetch YouTube audio
-  const fetchYoutubeAudio = async () => {
-    if (!youtubeUrl) {
-      setYoutubeError('Please enter a YouTube URL');
-      return false;
-    }
+  // Function to load a user-uploaded audio file
+  const handleAudioFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+    
+    const file = files[0];
     
     try {
-      setIsLoadingYoutube(true);
-      setYoutubeError('');
+      setIsLoadingAudio(true);
+      setAudioError('');
+      setAudioFile(file);
       
-      // Try direct embedding first for YouTube URLs
-      if (youtubeUrl.includes('youtube.com/watch') || youtubeUrl.includes('youtu.be/')) {
-        console.log('Attempting direct YouTube embedding...');
-        
-        // Extract video ID from URL
-        let videoId = '';
-        if (youtubeUrl.includes('youtube.com/watch')) {
-          const url = new URL(youtubeUrl);
-          videoId = url.searchParams.get('v') || '';
-        } else if (youtubeUrl.includes('youtu.be/')) {
-          videoId = youtubeUrl.split('/').pop() || '';
-        }
-        
-        if (!videoId) {
-          throw new Error('Could not extract YouTube video ID');
-        }
-        
-        console.log('Using direct YouTube embed for video ID:', videoId);
-        
-        try {
-          // Create audio processor with direct YouTube URL
-          const processor = await createYouTubeAudioProcessor(
-            `https://www.youtube.com/watch?v=${videoId}`, 
-            `YouTube Video (${videoId})`
-          );
-          
-          setYoutubeTitle(`YouTube Audio (${videoId})`);
-          setYoutubeAudio(processor);
-          setYoutubeEnabled(true);
-          return true;
-        } catch (directError) {
-          console.error('Direct embed failed, falling back to API:', directError);
-          // Continue to API approach below
-        }
-      }
+      // Create object URL for the file
+      const fileUrl = URL.createObjectURL(file);
       
-      // Call our API route
-      console.log('Fetching YouTube info via API route...');
-      const response = await fetch(`/api/youtube?url=${encodeURIComponent(youtubeUrl)}`);
+      // Create audio processor with the file
+      const processor = await createAudioProcessor(fileUrl, file.name);
       
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error('API route error:', errorData);
-        throw new Error(errorData.error || errorData.details || 'Failed to fetch YouTube audio');
-      }
+      setAudioTitle(file.name);
+      setAudioProcessor(processor);
+      setAudioEnabled(true);
+      setUseSampleAudio(false);
       
-      const data = await response.json();
-      console.log('API returned data:', data);
+      // Reset sample audio if it was previously used
+      setSampleAudioId('');
       
-      if (!data.formats || data.formats.length === 0) {
-        throw new Error('No audio formats available for this video');
-      }
-      
-      // Find best audio format (highest bitrate)
-      const bestFormat = data.formats.sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0))[0];
-      console.log('Selected audio format:', bestFormat);
-      
-      // Create audio processor
-      const processor = await createYouTubeAudioProcessor(bestFormat.url, data.title);
-      
-      setYoutubeTitle(data.title);
-      setYoutubeAudio(processor);
-      setYoutubeEnabled(true);
       return true;
     } catch (error) {
-      console.error('Error fetching YouTube audio:', error);
-      setYoutubeError(error instanceof Error ? error.message : 'Failed to load YouTube audio');
-      
-      // Show detailed error to help debugging
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      alert(`YouTube Error: ${errorMessage}\n\nYouTube may be blocking access to this video. Try a different video or check console for details.`);
-      
+      console.error('Error loading audio file:', error);
+      setAudioError(error instanceof Error ? error.message : 'Failed to load audio file');
       return false;
     } finally {
-      setIsLoadingYoutube(false);
+      setIsLoadingAudio(false);
     }
   };
-  
-  // Handle YouTube audio when active state changes
+
+  // Function to load a sample audio file
+  const loadSampleAudio = async (id?: string) => {
+    try {
+      setIsLoadingAudio(true);
+      setAudioError('');
+      
+      // Get the sample audio file - either by ID or random
+      const sampleAudio = id 
+        ? sampleAudioFiles.find(audio => audio.id === id) || getRandomSampleAudio()
+        : getRandomSampleAudio();
+      
+      setSampleAudioId(sampleAudio.id);
+      
+      // Create audio processor
+      const processor = await createAudioProcessor(
+        sampleAudio.url, 
+        sampleAudio.title
+      );
+      
+      setAudioTitle(sampleAudio.title);
+      setAudioProcessor(processor);
+      setAudioEnabled(true);
+      setUseSampleAudio(true);
+      
+      // Reset any uploaded file
+      setAudioFile(null);
+      // If there's a file input element, reset it
+      const fileInput = document.getElementById('audioFile') as HTMLInputElement;
+      if (fileInput) fileInput.value = '';
+      
+      return true;
+    } catch (error) {
+      console.error('Error loading sample audio:', error);
+      setAudioError(error instanceof Error ? error.message : 'Failed to load sample audio');
+      return false;
+    } finally {
+      setIsLoadingAudio(false);
+    }
+  };
+
+  // Handle audio when active state changes
   useEffect(() => {
-    if (!youtubeAudio) return;
+    if (!audioProcessor) return;
     
-    if (isActive && youtubeEnabled) {
-      youtubeAudio.play().catch(error => {
-        console.error('Error playing YouTube audio:', error);
-        setYoutubeError('Failed to play audio. Try clicking the start button again.');
+    if (isActive && audioEnabled) {
+      audioProcessor.play().catch(error => {
+        console.error('Error playing audio:', error);
+        setAudioError('Failed to play audio. Try clicking the start button again.');
       });
     } else {
-      youtubeAudio.pause();
+      audioProcessor.pause();
     }
     
     return () => {
-      if (youtubeAudio) {
-        youtubeAudio.pause();
+      if (audioProcessor) {
+        audioProcessor.pause();
       }
     };
-  }, [isActive, youtubeAudio, youtubeEnabled]);
+  }, [isActive, audioProcessor, audioEnabled]);
   
   // Update audio volume when changed
   useEffect(() => {
-    if (youtubeAudio) {
-      youtubeAudio.setVolume(soundVolume);
+    if (audioProcessor) {
+      audioProcessor.setVolume(soundVolume);
     }
-  }, [soundVolume, youtubeAudio]);
+  }, [soundVolume, audioProcessor]);
   
   // Physics-based animation
   useEffect(() => {
@@ -250,7 +237,7 @@ export function EMDRProcessor() {
       isTransitioning = true;
       
       // Play sound at extremes (positions 0 and 2)
-      if (soundEnabled && sound && !youtubeEnabled) {
+      if (soundEnabled && sound && !audioEnabled) {
         if (positionIndex === 0) {
           sound.playTone('C4', soundVolume);
         } else if (positionIndex === 2) {
@@ -286,13 +273,12 @@ export function EMDRProcessor() {
           y: currentY
         });
         
-        // Update panner for YouTube audio - full -1 to 1 range
-        if (youtubeAudio && youtubeEnabled) {
+        // Update panner for audio - full -1 to 1 range
+        if (audioProcessor && audioEnabled) {
           // Map x position to panner value (-1 to 1)
-          // Adjusted mapping to use the full range
           const normalizedPosition = (currentX - (viewportWidth * 0.1)) / (viewportWidth * 0.8);
           const panValue = (normalizedPosition * 2) - 1;
-          youtubeAudio.setPan(Math.max(-1, Math.min(1, panValue)));
+          audioProcessor.setPan(Math.max(-1, Math.min(1, panValue)));
         }
         
         // Continue animation if not complete
@@ -338,8 +324,8 @@ export function EMDRProcessor() {
     sound,
     soundVolume,
     autoChangeColors,
-    youtubeAudio,
-    youtubeEnabled,
+    audioProcessor,
+    audioEnabled,
     position // Added position as dependency since we use it in the animation
   ]);
 
@@ -349,21 +335,21 @@ export function EMDRProcessor() {
     await resumeAudioContext();
     
     if (!isActive) {
-      // If YouTube is enabled but no audio loaded yet, try to load it
-      if (youtubeEnabled && !youtubeAudio && youtubeUrl) {
-        const success = await fetchYoutubeAudio();
+      if (audioEnabled && !audioProcessor) {
+        // Try to load sample audio if no audio loaded
+        const success = await loadSampleAudio();
         if (!success) {
-          return; // Don't start if YouTube loading failed
+          return; // Don't start if audio loading failed
         }
       }
       
-      if (soundEnabled && !youtubeEnabled && sound) {
+      if (soundEnabled && !audioEnabled && sound) {
         sound.playTone('G4', soundVolume); // Success tone
       }
     } else {
-      // Stopping - pause YouTube audio if active
-      if (youtubeAudio) {
-        youtubeAudio.pause();
+      // Stopping - pause audio if active
+      if (audioProcessor) {
+        audioProcessor.pause();
       }
     }
     
@@ -373,39 +359,6 @@ export function EMDRProcessor() {
   // Toggle settings drawer
   const toggleSettings = () => {
     setSettingsOpen(!settingsOpen);
-  };
-
-  // Function to load a sample audio file
-  const loadSampleAudio = async (id?: string) => {
-    try {
-      setIsLoadingYoutube(true);
-      setYoutubeError('');
-      
-      // Get the sample audio file - either by ID or random
-      const sampleAudio = id 
-        ? sampleAudioFiles.find(audio => audio.id === id) || getRandomSampleAudio()
-        : getRandomSampleAudio();
-      
-      setSampleAudioId(sampleAudio.id);
-      
-      // Create audio processor
-      const processor = await createYouTubeAudioProcessor(
-        sampleAudio.url, 
-        sampleAudio.title
-      );
-      
-      setYoutubeTitle(sampleAudio.title);
-      setYoutubeAudio(processor);
-      setYoutubeEnabled(true);
-      setUseSampleAudio(true);
-      return true;
-    } catch (error) {
-      console.error('Error loading sample audio:', error);
-      setYoutubeError(error instanceof Error ? error.message : 'Failed to load sample audio');
-      return false;
-    } finally {
-      setIsLoadingYoutube(false);
-    }
   };
 
   return (
@@ -440,10 +393,10 @@ export function EMDRProcessor() {
           </svg>
         </div>
         
-        {/* YouTube title overlay when playing */}
-        {youtubeEnabled && youtubeTitle && (
+        {/* Audio title overlay when playing */}
+        {audioEnabled && audioTitle && (
           <div className="absolute bottom-4 left-4 bg-black bg-opacity-50 text-white p-2 rounded max-w-xs truncate">
-            <span className="text-xs">Playing: {youtubeTitle}</span>
+            <span className="text-xs">Playing: {audioTitle}</span>
           </div>
         )}
       </div>
@@ -485,64 +438,56 @@ export function EMDRProcessor() {
             </button>
           </div>
           
-          {/* YouTube URL Input */}
+          {/* Audio Upload */}
           <div className="flex flex-col mb-6 border-b border-gray-700 pb-4">
-            <h3 className="text-white font-medium mb-2">YouTube Audio</h3>
+            <h3 className="text-white font-medium mb-2">Audio</h3>
             
             <div className="flex flex-col space-y-2">
-              <label htmlFor="youtubeUrl" className="text-white text-sm">
-                YouTube URL:
+              <label htmlFor="audioFile" className="text-white text-sm">
+                Upload Audio File:
               </label>
-              <div className="flex">
-                <input
-                  id="youtubeUrl"
-                  type="text"
-                  value={youtubeUrl}
-                  onChange={(e) => setYoutubeUrl(e.target.value)}
-                  placeholder="https://www.youtube.com/watch?v=..."
-                  className="flex-1 p-2 rounded-l text-sm bg-gray-700 text-white border border-gray-600 focus:outline-none focus:border-blue-500"
-                  disabled={isActive}
-                  aria-describedby="youtubeHint"
-                />
-                <button
-                  onClick={fetchYoutubeAudio}
-                  disabled={isActive || isLoadingYoutube || !youtubeUrl}
-                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-3 rounded-r"
-                  aria-label="Load YouTube audio"
-                >
-                  {isLoadingYoutube ? '⏳' : '📥'}
-                </button>
-              </div>
+              <input
+                id="audioFile"
+                type="file"
+                accept="audio/*"
+                onChange={handleAudioFileUpload}
+                disabled={isActive}
+                className="text-white text-sm bg-gray-700 p-2 rounded"
+                aria-describedby="audioHint"
+              />
               
-              {youtubeError && (
+              {audioError && (
                 <p className="text-red-400 text-xs mt-1" role="alert">
-                  {youtubeError}
+                  {audioError}
                 </p>
               )}
               
-              <p id="youtubeHint" className="text-gray-400 text-xs">
-                Paste a YouTube URL to use its audio with stereo panning
+              <p id="audioHint" className="text-gray-400 text-xs">
+                Upload MP3, WAV, OGG, or M4A files to use with stereo panning
               </p>
               
-              {youtubeTitle && (
+              {audioFile && (
                 <div className="flex items-center mt-2">
                   <div className="flex-1">
-                    <p className="text-white text-sm truncate" title={youtubeTitle}>
-                      {youtubeTitle}
+                    <p className="text-white text-sm truncate" title={audioFile.name}>
+                      {audioFile.name}
                     </p>
                   </div>
                   <div className="flex items-center">
                     <input
-                      id="youtubeEnabled"
+                      id="audioEnabled"
                       type="checkbox"
-                      checked={youtubeEnabled}
-                      onChange={(e) => setYoutubeEnabled(e.target.checked)}
+                      checked={audioEnabled && !useSampleAudio}
+                      onChange={(e) => {
+                        setAudioEnabled(e.target.checked);
+                        if (e.target.checked) setUseSampleAudio(false);
+                      }}
                       className="mr-2 h-4 w-4"
-                      disabled={isActive || !youtubeAudio}
-                      aria-checked={youtubeEnabled}
+                      disabled={isActive || !audioProcessor}
+                      aria-checked={audioEnabled && !useSampleAudio}
                     />
-                    <label htmlFor="youtubeEnabled" className="text-white text-sm">
-                      Use YouTube audio
+                    <label htmlFor="audioEnabled" className="text-white text-sm">
+                      Use uploaded audio
                     </label>
                   </div>
                 </div>
@@ -575,7 +520,7 @@ export function EMDRProcessor() {
               ))}
             </div>
             
-            {youtubeError && useSampleAudio && (
+            {audioError && useSampleAudio && (
               <div className="mt-2 p-2 bg-yellow-900 text-yellow-300 text-xs rounded">
                 <p>YouTube failed, using sample audio instead</p>
               </div>
@@ -632,7 +577,7 @@ export function EMDRProcessor() {
                 onChange={(e) => setSoundEnabled(e.target.checked)}
                 className="mr-2 h-4 w-4"
                 aria-checked={soundEnabled}
-                disabled={youtubeEnabled}
+                disabled={audioEnabled}
               />
               <label htmlFor="sound" className="text-white">
                 Enable sound effects

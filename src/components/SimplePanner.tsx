@@ -13,11 +13,14 @@ export function SimplePanner() {
   const [audioUrl, setAudioUrl] = useState<string>('');
   const [audioTitle, setAudioTitle] = useState<string>('');
   const [isPlaying, setIsPlaying] = useState(false);
-  const [panValue, setPanValue] = useState(1); // Start at right (1)
+  const [panValue, setPanValue] = useState(0.5); // Start at center
   const [volume, setVolume] = useState(0.7); // 0 to 1
+  
+  // Oscillation parameters
   const [oscillationEnabled, setOscillationEnabled] = useState(true);
-  const [oscillationSpeed, setOscillationSpeed] = useState(0.01);
-  const [rightToCenter, setRightToCenter] = useState(true); // True = 1 to 0, False = -1 to 0
+  const [frequency, setFrequency] = useState(0.5); // Hz - cycles per second
+  const [amplitude, setAmplitude] = useState(0.5); // 0 to 1 - how wide the pan goes
+  const [offset, setOffset] = useState(0.5); // 0 to 1 - center position of the wave
   
   // References for the audio elements
   const audioElement = useRef<HTMLAudioElement | null>(null);
@@ -166,33 +169,31 @@ export function SimplePanner() {
     }
   }, [volume]);
   
-  // Oscillation effect - the real meat of the application
+  // Oscillation effect using sine wave
   useEffect(() => {
     if (!isPlaying || !oscillationEnabled) return;
     
-    // Create oscillation between right and center
-    let direction = rightToCenter ? -1 : 1; // -1 = towards center, 1 = towards right
-    let currentPosition = panValue;
+    // Track animation time
+    let startTime = Date.now();
     
     const interval = setInterval(() => {
-      // Move the pan position
-      currentPosition += oscillationSpeed * direction;
+      // Calculate elapsed time in seconds
+      const elapsedTime = (Date.now() - startTime) / 1000;
       
-      // Reverse direction if we hit the boundaries
-      if (currentPosition >= 1) {
-        currentPosition = 1;
-        direction = -1; // Start moving toward center
-      } else if (currentPosition <= 0) {
-        currentPosition = 0;
-        direction = 1; // Start moving toward right
-      }
+      // Calculate sine wave: offset + amplitude * sin(2π * frequency * time)
+      // This creates a wave centered at 'offset' with amplitude 'amplitude'
+      // that completes 'frequency' cycles per second
+      const newPanValue = offset + amplitude * Math.sin(2 * Math.PI * frequency * elapsedTime);
       
-      // Update the pan value state
-      setPanValue(currentPosition);
-    }, 20); // 20ms for smoother transitions
+      // Clamp between 0 and 1 to ensure it's a valid pan value
+      const clampedPanValue = Math.max(0, Math.min(1, newPanValue));
+      
+      // Update pan value
+      setPanValue(clampedPanValue);
+    }, 16); // ~60fps for smooth visual updates
     
     return () => clearInterval(interval);
-  }, [isPlaying, panValue, oscillationEnabled, oscillationSpeed, rightToCenter]);
+  }, [isPlaying, oscillationEnabled, frequency, amplitude, offset]);
   
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-4">
@@ -267,7 +268,10 @@ export function SimplePanner() {
         {/* Pan control */}
         <div className="mb-4">
           <label htmlFor="panControl" className="block text-sm font-medium text-gray-700 mb-2">
-            Pan: {panValue.toFixed(2)} ({panValue === 0 ? 'Center' : panValue === 1 ? 'Right' : 'Between'})
+            Current Pan: {panValue.toFixed(2)}
+            <span className="ml-2 text-xs text-gray-500">
+              {panValue < 0.4 ? 'Left' : panValue > 0.6 ? 'Right' : 'Center'}
+            </span>
           </label>
           <input
             id="panControl"
@@ -278,7 +282,11 @@ export function SimplePanner() {
             value={panValue}
             onChange={(e) => setPanValue(parseFloat(e.target.value))}
             className="w-full"
+            aria-label={`Pan position: ${panValue.toFixed(2)}`}
           />
+          <div className="text-xs text-gray-500 mt-1">
+            (Manual control overrides sine wave while adjusting)
+          </div>
         </div>
         
         {/* Volume control */}
@@ -309,25 +317,71 @@ export function SimplePanner() {
               className="mr-2 h-4 w-4"
             />
             <label htmlFor="oscillation" className="text-sm font-medium text-gray-700">
-              Enable automatic right-to-center panning
+              Enable sine wave panning
             </label>
           </div>
           
           {oscillationEnabled && (
-            <div>
-              <label htmlFor="speed" className="block text-sm font-medium text-gray-700 mb-2">
-                Speed: {oscillationSpeed.toFixed(3)}
-              </label>
-              <input
-                id="speed"
-                type="range"
-                min="0.001"
-                max="0.05"
-                step="0.001"
-                value={oscillationSpeed}
-                onChange={(e) => setOscillationSpeed(parseFloat(e.target.value))}
-                className="w-full"
-              />
+            <div className="space-y-3">
+              {/* Frequency control */}
+              <div>
+                <label htmlFor="frequency" className="block text-sm font-medium text-gray-700 mb-1">
+                  Frequency: {frequency.toFixed(2)} Hz
+                </label>
+                <input
+                  id="frequency"
+                  type="range"
+                  min="0.1"
+                  max="2"
+                  step="0.01"
+                  value={frequency}
+                  onChange={(e) => setFrequency(parseFloat(e.target.value))}
+                  className="w-full"
+                />
+                <div className="text-xs text-gray-500 mt-1">
+                  Speed of oscillation - higher values = faster panning
+                </div>
+              </div>
+              
+              {/* Amplitude control */}
+              <div>
+                <label htmlFor="amplitude" className="block text-sm font-medium text-gray-700 mb-1">
+                  Amplitude: {amplitude.toFixed(2)}
+                </label>
+                <input
+                  id="amplitude"
+                  type="range"
+                  min="0"
+                  max="0.5"
+                  step="0.01"
+                  value={amplitude}
+                  onChange={(e) => setAmplitude(parseFloat(e.target.value))}
+                  className="w-full"
+                />
+                <div className="text-xs text-gray-500 mt-1">
+                  Width of panning - how far sound moves from center
+                </div>
+              </div>
+              
+              {/* Offset control */}
+              <div>
+                <label htmlFor="offset" className="block text-sm font-medium text-gray-700 mb-1">
+                  Center position: {offset.toFixed(2)}
+                </label>
+                <input
+                  id="offset"
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  value={offset}
+                  onChange={(e) => setOffset(parseFloat(e.target.value))}
+                  className="w-full"
+                />
+                <div className="text-xs text-gray-500 mt-1">
+                  Center position of the wave - 0 = left, 0.5 = center, 1 = right
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -350,13 +404,21 @@ export function SimplePanner() {
       {/* Status text */}
       <div className="mt-2 text-sm text-gray-500">
         {isPlaying ? 'Playing' : 'Stopped'} - 
-        Pan position: {panValue.toFixed(2)} ({panValue === 0 ? 'Center' : panValue === 1 ? 'Right' : 'Between'})
+        Pan: {panValue.toFixed(2)} &nbsp;
+        {oscillationEnabled ? 
+          `(Sine wave: ${frequency.toFixed(1)}Hz, amplitude: ${amplitude.toFixed(2)})` : 
+          '(Manual control)'
+        }
       </div>
       
       {/* Accessibility info */}
       <div className="sr-only" aria-live="polite">
         {isPlaying ? 'Audio is playing' : 'Audio is stopped'}. 
-        Pan position: {panValue.toFixed(2)} ({panValue === 0 ? 'Center' : panValue === 1 ? 'Right' : 'Between center and right'}).
+        Pan position: {panValue.toFixed(2)}.
+        {oscillationEnabled ? 
+          `Using sine wave oscillation with frequency ${frequency} Hertz and amplitude ${amplitude}.` : 
+          'Using manual panning control.'
+        }
       </div>
     </div>
   );

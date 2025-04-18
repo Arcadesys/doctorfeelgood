@@ -10,8 +10,11 @@ module.exports = {
     '^.+\\.(css|less|scss|sass)$': 'identity-obj-proxy'
   },
   transform: {
-    // Handle TypeScript
-    '^.+\\.(ts|tsx)$': ['babel-jest', { presets: ['next/babel'] }],
+    // Handle TypeScript with babel-jest
+    '^.+\\.(ts|tsx)$': ['babel-jest', { 
+      configFile: './babel.config.js', // Explicitly point to our babel config
+      presets: ['next/babel']
+    }],
   },
   testMatch: ['**/__tests__/**/*.ts?(x)', '**/?(*.)+(spec|test).ts?(x)'],
   collectCoverage: true,

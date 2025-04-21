@@ -939,8 +939,8 @@ export function SimplePanner() {
                 <input
                   id="frequency"
                   type="range"
-                  min="0.1"
-                  max="2"
+                  min="0.05"
+                  max="1"
                   step="0.01"
                   value={frequency}
                   onChange={(e) => setFrequency(parseFloat(e.target.value))}

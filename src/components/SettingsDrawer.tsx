@@ -22,7 +22,7 @@ interface SettingsDrawerProps {
 }
 
 // Type for sub-menu tabs
-type ControlsSubTab = 'visual' | 'auditory' | 'kinesthetic';
+type ControlsSubTab = 'visual' | 'audio';
 
 const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
   isOpen,
@@ -157,27 +157,15 @@ const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
                     </button>
                     <button
                       className={`flex-1 py-2 px-2 text-center transition-colors text-sm ${
-                        activeSubTab === 'auditory'
+                        activeSubTab === 'audio'
                           ? 'border-b-2 border-purple-500 font-medium text-purple-600 dark:text-purple-400'
                           : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
                       }`}
-                      onClick={() => setActiveSubTab('auditory')}
-                      aria-selected={activeSubTab === 'auditory'}
+                      onClick={() => setActiveSubTab('audio')}
+                      aria-selected={activeSubTab === 'audio'}
                       role="tab"
                     >
-                      Auditory
-                    </button>
-                    <button
-                      className={`flex-1 py-2 px-2 text-center transition-colors text-sm ${
-                        activeSubTab === 'kinesthetic'
-                          ? 'border-b-2 border-amber-500 font-medium text-amber-600 dark:text-amber-400'
-                          : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
-                      }`}
-                      onClick={() => setActiveSubTab('kinesthetic')}
-                      aria-selected={activeSubTab === 'kinesthetic'}
-                      role="tab"
-                    >
-                      Kinesthetic
+                      Audio
                     </button>
                   </div>
 
@@ -219,11 +207,51 @@ const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
                           disabled={isSessionActive}
                         />
                       </div>
+
+                      <div>
+                        <label htmlFor="speed" className="block mb-2 text-sm font-medium">
+                          Speed: <span className="text-sm font-mono bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded ml-2">{settings.speed}ms</span>
+                        </label>
+                        <input
+                          id="speed"
+                          type="range"
+                          min="500"
+                          max="3000"
+                          step="100"
+                          value={settings.speed}
+                          onChange={handleChange('speed')}
+                          className="w-full"
+                          aria-label="Adjust speed of target movement"
+                          disabled={isSessionActive}
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="sessionDuration" className="block mb-2 text-sm font-medium">
+                          Session Duration:
+                        </label>
+                        <select
+                          id="sessionDuration"
+                          value={settings.sessionDuration}
+                          onChange={handleChange('sessionDuration')}
+                          className="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2"
+                          disabled={isSessionActive}
+                          aria-label="Session duration in minutes"
+                        >
+                          <option value="1">1 minute</option>
+                          <option value="3">3 minutes</option>
+                          <option value="5">5 minutes</option>
+                          <option value="10">10 minutes</option>
+                          <option value="15">15 minutes</option>
+                          <option value="20">20 minutes</option>
+                          <option value="30">30 minutes</option>
+                        </select>
+                      </div>
                     </div>
                   )}
 
-                  {/* Auditory Settings */}
-                  {activeSubTab === 'auditory' && (
+                  {/* Audio Settings */}
+                  {activeSubTab === 'audio' && (
                     <div className="space-y-4">
                       <div>
                         <label htmlFor="oscillatorType" className="block mb-2 text-sm font-medium">
@@ -278,51 +306,6 @@ const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
                           aria-label="Adjust frequency of right tone"
                           disabled={isSessionActive}
                         />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Kinesthetic Settings */}
-                  {activeSubTab === 'kinesthetic' && (
-                    <div className="space-y-4">
-                      <div>
-                        <label htmlFor="speed" className="block mb-2 text-sm font-medium">
-                          Speed: <span className="text-sm font-mono bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded ml-2">{settings.speed}ms</span>
-                        </label>
-                        <input
-                          id="speed"
-                          type="range"
-                          min="500"
-                          max="3000"
-                          step="100"
-                          value={settings.speed}
-                          onChange={handleChange('speed')}
-                          className="w-full"
-                          aria-label="Adjust speed of target movement"
-                          disabled={isSessionActive}
-                        />
-                      </div>
-
-                      <div>
-                        <label htmlFor="sessionDuration" className="block mb-2 text-sm font-medium">
-                          Session Duration:
-                        </label>
-                        <select
-                          id="sessionDuration"
-                          value={settings.sessionDuration}
-                          onChange={handleChange('sessionDuration')}
-                          className="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2"
-                          disabled={isSessionActive}
-                          aria-label="Session duration in minutes"
-                        >
-                          <option value="1">1 minute</option>
-                          <option value="3">3 minutes</option>
-                          <option value="5">5 minutes</option>
-                          <option value="10">10 minutes</option>
-                          <option value="15">15 minutes</option>
-                          <option value="20">20 minutes</option>
-                          <option value="30">30 minutes</option>
-                        </select>
                       </div>
                     </div>
                   )}

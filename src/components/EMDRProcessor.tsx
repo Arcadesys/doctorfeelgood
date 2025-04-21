@@ -356,18 +356,68 @@ export function EMDRProcessor() {
   
   // Connect audio element to audio context when it's available
   useEffect(() => {
-    if (!audioPlayerRef.current || !audioContextRef.current.context || audioContextRef.current.source) {
+    if (!audioPlayerRef.current || !audioContextRef.current.context) {
       return;
     }
     
-    try {
-      const source = audioContextRef.current.context.createMediaElementSource(audioPlayerRef.current);
-      source.connect(audioContextRef.current.gainNode!);
-      audioContextRef.current.source = source;
-      console.log('Audio source connected to context');
-    } catch (error) {
-      console.error('Failed to connect audio to context:', error);
-    }
+    const connectAudioToContext = async () => {
+      try {
+        const audioElement = audioPlayerRef.current;
+        const audioContext = audioContextRef.current.context;
+        
+        if (!audioElement || !audioContext) {
+          throw new Error('Audio element or context not available');
+        }
+
+        // Wait for the audio to be loaded
+        if (audioElement.readyState < 2) { // HAVE_CURRENT_DATA
+          await new Promise<void>((resolve, reject) => {
+            const handleCanPlay = () => {
+              audioElement.removeEventListener('canplay', handleCanPlay);
+              resolve();
+            };
+            const handleError = (e: Event) => {
+              audioElement.removeEventListener('error', handleError);
+              reject(new Error('Audio failed to load'));
+            };
+            audioElement.addEventListener('canplay', handleCanPlay);
+            audioElement.addEventListener('error', handleError);
+          });
+        }
+
+        // Check if we already have a source node
+        if (audioContextRef.current.source) {
+          console.log('Audio source already connected');
+          return;
+        }
+
+        // Create and connect the source node
+        const source = audioContext.createMediaElementSource(audioElement);
+        source.connect(audioContextRef.current.gainNode!);
+        audioContextRef.current.source = source;
+        console.log('Audio source connected to context');
+      } catch (error) {
+        console.error('Failed to connect audio to context:', error);
+        // Try to recover by reloading the audio
+        if (audioPlayerRef.current) {
+          audioPlayerRef.current.load();
+        }
+      }
+    };
+
+    connectAudioToContext();
+
+    // Cleanup function
+    return () => {
+      if (audioContextRef.current.source) {
+        try {
+          audioContextRef.current.source.disconnect();
+          audioContextRef.current.source = null;
+        } catch (error) {
+          console.error('Error disconnecting audio source:', error);
+        }
+      }
+    };
   }, [isPlaying]);
   
   // Update audio pan value when it changes

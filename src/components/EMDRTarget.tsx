@@ -12,7 +12,7 @@ interface EMDRTargetProps {
 
 const EMDRTarget: React.FC<EMDRTargetProps> = ({
   isActive = false,
-  speed = 1000,
+  speed = 2000,
   size = 40,
   color = '#ff0000',
   pingPong = true,

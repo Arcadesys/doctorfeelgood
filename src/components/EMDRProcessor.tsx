@@ -2,6 +2,14 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import { 
+  AudioEngine, 
+  AudioMode,
+  ContactSoundConfig, 
+  AudioTrackConfig
+} from '../lib/audioEngine';
+import { useRouter } from 'next/navigation';
+import CustomKnob from './CustomKnob';
 
 // Simple version without the File System Access API
 type AudioFile = {
@@ -9,7 +17,19 @@ type AudioFile = {
   name: string;
   lastUsed: string;
   path?: string;
+  objectUrl?: string;
 };
+
+// Audio context interfaces
+interface AudioContextState {
+  context: AudioContext | null;
+  source: MediaElementAudioSourceNode | null;
+  panner: StereoPannerNode | null;
+  gainNode: GainNode | null;
+}
+
+// Update the audio mode type
+// type AudioMode = 'click' | 'audioTrack';
 
 export function EMDRProcessor() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -19,11 +39,44 @@ export function EMDRProcessor() {
   const [folderPath, setFolderPath] = useState<string>('');
   const [a11yMessage, setA11yMessage] = useState<string>('Visual target ready. Audio controls available at bottom of screen.');
   const [isDarkMode, setIsDarkMode] = useState(true);
+  const [panValue, setPanValue] = useState(0); // -1 (left) to 1 (right)
+  const [panWidthPercent, setPanWidthPercent] = useState(80); // Percentage of maximum pan width
+  const [audioMode, setAudioMode] = useState<AudioMode>('click');
+  const [showLibrary, setShowLibrary] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
+  // Audio engine settings
+  const [contactSoundConfig, setContactSoundConfig] = useState<ContactSoundConfig>({
+    leftSamplePath: '/sounds/click-left.mp3',
+    rightSamplePath: '/sounds/click-right.mp3',
+    volume: 0.5,
+    enabled: true
+  });
+  
+  const [audioTrackConfig, setAudioTrackConfig] = useState<AudioTrackConfig>({
+    volume: 0.7,
+    loop: true,
+    filePath: '/audio/sine-440hz.mp3'
+  });
   
   // Animation state
   const [animationFrameId, setAnimationFrameId] = useState<number | null>(null);
   const animationIdRef = useRef<number | null>(null);
   const canvasSizedRef = useRef<boolean>(false);
+  const lastTriggerTimeRef = useRef<number>(0);
+  const lastTriggerSideRef = useRef<'left' | 'right' | null>(null);
+  
+  // Audio context state
+  const audioContextRef = useRef<AudioContextState>({
+    context: null,
+    source: null,
+    panner: null,
+    gainNode: null
+  });
+  
+  // Audio engine reference
+  const audioEngineRef = useRef<AudioEngine | null>(null);
   
   const menuRef = useRef<HTMLDivElement>(null);
   const menuOpenSoundRef = useRef<HTMLAudioElement>(null);
@@ -31,6 +84,14 @@ export function EMDRProcessor() {
   const audioPlayerRef = useRef<HTMLAudioElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const playStatusSoundRef = useRef<HTMLAudioElement>(null);
+  
+  // Add BPM state
+  const [bpm, setBpm] = useState(60); // Default to 60 BPM
+  
+  // Add timer states
+  const [sessionDuration, setSessionDuration] = useState(30); // Default 30 seconds
+  const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
   
   // Initialize canvas when component mounts
   useEffect(() => {
@@ -42,6 +103,75 @@ export function EMDRProcessor() {
       drawVisualTarget();
     }
   }, []);
+  
+  // Initialize Audio Engine
+  useEffect(() => {
+    // IIFE to handle async initialization
+    (async () => {
+      // Initialize with our audio element
+      if (audioPlayerRef.current) {
+        try {
+          const audioEngine = new AudioEngine();
+          const success = await audioEngine.initialize(audioPlayerRef.current);
+          
+          if (success) {
+            console.log('AudioEngine initialized with audio element');
+            
+            // Set initial configurations
+            audioEngine.updateContactSoundConfig(contactSoundConfig);
+            
+            // Set initial audio mode
+            audioEngine.setAudioMode(audioMode);
+            
+            // Store in ref
+            audioEngineRef.current = audioEngine;
+          } else {
+            console.error('Failed to initialize AudioEngine');
+          }
+        } catch (error) {
+          console.error('Error initializing AudioEngine:', error);
+        }
+      }
+    })();
+    
+    // Clean up on unmount
+    return () => {
+      if (audioEngineRef.current) {
+        audioEngineRef.current.dispose();
+        audioEngineRef.current = null;
+      }
+    };
+  }, []);
+  
+  // Sync configurations with audio engine when they change
+  useEffect(() => {
+    if (audioEngineRef.current) {
+      audioEngineRef.current.updateContactSoundConfig(contactSoundConfig);
+    }
+  }, [contactSoundConfig]);
+  
+  useEffect(() => {
+    if (audioEngineRef.current) {
+      audioEngineRef.current.updateAudioTrackConfig(audioTrackConfig);
+    }
+  }, [audioTrackConfig]);
+  
+  // Sync audio mode when it changes
+  useEffect(() => {
+    if (audioEngineRef.current && audioEngineRef.current.getAudioMode() !== audioMode) {
+      // Stop any current playback
+      if (isPlaying) {
+        audioEngineRef.current.stopAll();
+        setIsPlaying(false);
+      }
+      
+      // Set new mode
+      audioEngineRef.current.setAudioMode(audioMode);
+      
+      // Update accessibility message
+      setA11yMessage(`Audio mode changed to ${audioMode === 'audioTrack' ? 'audio track' : 'click'}`);
+    }
+  }, [audioMode, isPlaying]);
   
   // Load audio metadata on mount
   useEffect(() => {
@@ -187,6 +317,67 @@ export function EMDRProcessor() {
     };
   }, [drawVisualTarget]); // Use drawVisualTarget as dependency (which internally depends on isPlaying)
   
+  // Set up audio context for panning
+  useEffect(() => {
+    // Clean up previous audio context
+    if (audioContextRef.current.context) {
+      return;
+    }
+    
+    // Create new audio context
+    try {
+      const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+      const context = new AudioContext();
+      const gainNode = context.createGain();
+      const panner = context.createStereoPanner();
+      
+      gainNode.connect(panner);
+      panner.connect(context.destination);
+      
+      audioContextRef.current = {
+        context,
+        source: null,
+        panner,
+        gainNode
+      };
+      
+      console.log('Audio context created successfully');
+    } catch (error) {
+      console.error('Failed to create audio context:', error);
+    }
+    
+    // Clean up on component unmount
+    return () => {
+      if (audioContextRef.current.context) {
+        audioContextRef.current.context.close();
+      }
+    };
+  }, []);
+  
+  // Connect audio element to audio context when it's available
+  useEffect(() => {
+    if (!audioPlayerRef.current || !audioContextRef.current.context || audioContextRef.current.source) {
+      return;
+    }
+    
+    try {
+      const source = audioContextRef.current.context.createMediaElementSource(audioPlayerRef.current);
+      source.connect(audioContextRef.current.gainNode!);
+      audioContextRef.current.source = source;
+      console.log('Audio source connected to context');
+    } catch (error) {
+      console.error('Failed to connect audio to context:', error);
+    }
+  }, [isPlaying]);
+  
+  // Update audio pan value when it changes
+  useEffect(() => {
+    if (audioContextRef.current.panner && audioContextRef.current.panner.pan) {
+      audioContextRef.current.panner.pan.value = panValue;
+      console.log(`Pan value updated to: ${panValue}`);
+    }
+  }, [panValue]);
+  
   // Handle canvas animation based on play state
   useEffect(() => {
     console.log("Animation useEffect triggered. isPlaying:", isPlaying);
@@ -200,13 +391,11 @@ export function EMDRProcessor() {
       
       // Position and properties of the visual target
       let x = window.innerWidth / 2;
-      let direction = 1; // 1 = right, -1 = left
       const ballRadius = 20;
-      const moveSpeed = 3;
       const maxX = window.innerWidth - ballRadius;
       const minX = ballRadius;
+      const startTime = Date.now();
       
-      // Animation function
       const animate = () => {
         if (!canvasRef.current) {
           console.log("Canvas ref is null during animation");
@@ -222,38 +411,70 @@ export function EMDRProcessor() {
         // Clear canvas
         ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
         
-        // Move ball
-        x += moveSpeed * direction;
+        // Calculate position based on time and BPM
+        const cycleTimeInSeconds = 60 / bpm; // Time for one complete cycle in seconds
+        const elapsedTime = (Date.now() - startTime) / 1000;
+        const positionInCycle = (elapsedTime % cycleTimeInSeconds) / cycleTimeInSeconds;
         
-        // Reverse direction if hitting edge
-        if (x > maxX || x < minX) {
-          direction *= -1;
-          console.log("Reversing direction, now:", direction);
-          // Play a gentle tone when direction changes
-          const audioContext = new AudioContext();
-          const oscillator = audioContext.createOscillator();
-          oscillator.type = 'sine';
-          oscillator.frequency.setValueAtTime(direction > 0 ? 440 : 330, 0);
-          oscillator.connect(audioContext.destination);
-          oscillator.start();
-          oscillator.stop(0.1); // Short beep
+        // Convert to a sine wave position -1 to 1
+        const sineValue = Math.sin(positionInCycle * Math.PI * 2);
+        
+        // Scale based on canvas width and pan width setting
+        const centerX = window.innerWidth / 2;
+        const fullAmplitude = (maxX - minX) / 2 - ballRadius;
+        const maxAmplitude = fullAmplitude * (panWidthPercent / 100);
+        
+        // Calculate new x position
+        x = centerX + (sineValue * maxAmplitude);
+        
+        // Calculate normalized position for panning (-1 to 1)
+        const normalizedX = sineValue * (panWidthPercent / 100);
+        setPanValue(normalizedX);
+        
+        // Update audio engine panning
+        if (audioEngineRef.current) {
+          audioEngineRef.current.setPan(normalizedX);
+        }
+        
+        // Check peaks for contact sounds
+        const peakThreshold = 0.98;
+        const now = Date.now();
+        const minTimeBetweenTriggers = 200;
+        
+        if (Math.abs(sineValue) >= peakThreshold) {
+          const isRightPeak = sineValue > 0;
+          const currentSide = isRightPeak ? 'right' : 'left';
+          
+          if (
+            now - lastTriggerTimeRef.current >= minTimeBetweenTriggers &&
+            lastTriggerSideRef.current !== currentSide
+          ) {
+            if (audioEngineRef.current) {
+              audioEngineRef.current.playContactSound(!isRightPeak);
+              lastTriggerTimeRef.current = now;
+              lastTriggerSideRef.current = currentSide;
+            }
+          }
+        } else if (Math.abs(sineValue) < 0.5) {
+          lastTriggerSideRef.current = null;
         }
         
         // Draw ball
         ctx.beginPath();
         ctx.arc(x, window.innerHeight / 2, ballRadius, 0, Math.PI * 2);
-        ctx.fillStyle = isDarkMode ? '#3b82f6' : '#1d4ed8'; // Blue for dark mode, darker blue for light mode
+        ctx.fillStyle = isDarkMode ? '#3b82f6' : '#1d4ed8';
         ctx.fill();
         ctx.closePath();
         
-        // Request next animation frame
         animationIdRef.current = requestAnimationFrame(animate);
       };
       
-      // Start animation
-      console.log("Initiating animation frame");
       animationIdRef.current = requestAnimationFrame(animate);
       setAnimationFrameId(animationIdRef.current);
+      
+      if (audioEngineRef.current && !audioEngineRef.current.getIsPlaying()) {
+        audioEngineRef.current.startPlayback();
+      }
     } else {
       // Stop animation and clear canvas when paused
       if (animationIdRef.current) {
@@ -261,6 +482,14 @@ export function EMDRProcessor() {
         cancelAnimationFrame(animationIdRef.current);
         animationIdRef.current = null;
         setAnimationFrameId(null);
+        
+        // Reset pan to center when animation stops
+        setPanValue(0);
+        
+        // Stop constant tone
+        if (audioEngineRef.current && audioEngineRef.current.getIsPlaying()) {
+          audioEngineRef.current.stopAll();
+        }
         
         // Clear canvas
         if (canvasRef.current) {
@@ -285,9 +514,14 @@ export function EMDRProcessor() {
         console.log("Cleanup: canceling animation frame");
         cancelAnimationFrame(animationIdRef.current);
         animationIdRef.current = null;
+        
+        // Stop constant tone
+        if (audioEngineRef.current && audioEngineRef.current.getIsPlaying()) {
+          audioEngineRef.current.stopAll();
+        }
       }
     };
-  }, [isPlaying, isDarkMode]);
+  }, [isPlaying, isDarkMode, bpm, panWidthPercent]); // Add bpm and panWidthPercent to dependencies
   
   // Handle menu open/close with sound effects
   const toggleMenu = () => {
@@ -422,32 +656,117 @@ export function EMDRProcessor() {
     }
   };
   
-  // Handle audio playback controls
-  const togglePlayPause = () => {
-    if (!selectedAudio || !audioPlayerRef.current) return;
+  // Animation control functions
+  const startAnimation = useCallback(() => {
+    if (animationFrameId) return;
     
-    console.log("togglePlayPause: Current isPlaying state:", isPlaying);
+    const animate = () => {
+      if (!canvasRef.current) return;
+      
+      const ctx = canvasRef.current.getContext('2d');
+      if (!ctx) return;
+      
+      // Clear canvas
+      ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+      
+      // Update pan value
+      const newPanValue = Math.sin(Date.now() / 1000) * panWidthPercent / 100;
+      setPanValue(newPanValue);
+      
+      // Draw target
+      drawVisualTarget();
+      
+      // Request next frame
+      const frameId = requestAnimationFrame(animate);
+      setAnimationFrameId(frameId);
+    };
     
-    if (isPlaying) {
-      audioPlayerRef.current.pause();
-      setA11yMessage('Paused. Visual target stopped.');
-      // Play pause status sound (if available)
-      playStatusSoundRef.current?.play().catch(e => console.error('Error playing status sound:', e));
-      console.log("Setting isPlaying to false");
+    animate();
+  }, [panWidthPercent]);
+
+  const stopAnimation = useCallback(() => {
+    if (animationFrameId) {
+      cancelAnimationFrame(animationFrameId);
+      setAnimationFrameId(null);
+    }
+  }, [animationFrameId]);
+
+  // Handle timer countdown
+  useEffect(() => {
+    if (isPlaying && timeRemaining === null) {
+      // Start new session
+      setTimeRemaining(sessionDuration);
+    }
+
+    if (timeRemaining !== null && timeRemaining > 0 && isPlaying) {
+      timerRef.current = setTimeout(() => {
+        setTimeRemaining(prev => {
+          if (prev && prev > 0) {
+            return prev - 1;
+          }
+          return null;
+        });
+      }, 1000);
+    }
+
+    if (timeRemaining === 0) {
+      // Session complete
       setIsPlaying(false);
-    } else {
-      audioPlayerRef.current.play()
-        .then(() => {
-          setA11yMessage(`Playing ${selectedAudio.name}. Visual target active.`);
-          // Play play status sound (if available)
-          playStatusSoundRef.current?.play().catch(e => console.error('Error playing status sound:', e));
-          console.log("Setting isPlaying to true after successful play");
-          setIsPlaying(true);
-        })
-        .catch(error => console.error("Error playing audio:", error));
+      setTimeRemaining(null);
+      if (audioEngineRef.current) {
+        audioEngineRef.current.stopAll();
+      }
+      // Play completion sound
+      if (playStatusSoundRef.current) {
+        playStatusSoundRef.current.play();
+      }
+      setA11yMessage('Session complete');
+    }
+
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+      }
+    };
+  }, [timeRemaining, isPlaying, sessionDuration]);
+
+  // Update togglePlayPause to handle timer
+  const togglePlayPause = async () => {
+    try {
+      if (!isPlaying) {
+        if (audioEngineRef.current) {
+          const success = await audioEngineRef.current.startPlayback();
+          if (!success) {
+            console.warn('Failed to start audio playback, but continuing with visual target');
+          }
+        }
+        setIsPlaying(true);
+        setTimeRemaining(sessionDuration); // Start the timer
+        setA11yMessage('Session started. Visual target moving.');
+        startAnimation();
+      } else {
+        if (audioEngineRef.current) {
+          audioEngineRef.current.stopAll();
+        }
+        setIsPlaying(false);
+        setTimeRemaining(null); // Reset the timer
+        setA11yMessage('Session paused. Visual target stopped.');
+        stopAnimation();
+      }
+    } catch (error) {
+      console.warn('Error in audio playback:', error);
+      setIsPlaying(false);
+      setTimeRemaining(null);
     }
   };
-  
+
+  // Format time for display
+  const formatTime = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
   // Handle audio file deletion
   const deleteAudioFile = (id: string, e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent selecting the file when clicking delete
@@ -488,29 +807,167 @@ export function EMDRProcessor() {
     if (newDarkMode) {
       document.documentElement.classList.add('dark');
       localStorage.setItem('theme', 'dark');
-      // Play a deeper tone for dark mode
-      const audioContext = new AudioContext();
-      const oscillator = audioContext.createOscillator();
-      oscillator.type = 'sine';
-      oscillator.frequency.setValueAtTime(220, 0);
-      oscillator.connect(audioContext.destination);
-      oscillator.start();
-      oscillator.stop(0.2);
+      // Play a deeper tone for dark mode - use the menu close sound
+      if (menuCloseSoundRef.current) {
+        menuCloseSoundRef.current.play().catch(e => console.error('Error playing sound:', e));
+      }
     } else {
       document.documentElement.classList.remove('dark');
       localStorage.setItem('theme', 'light');
-      // Play a higher tone for light mode
-      const audioContext = new AudioContext();
-      const oscillator = audioContext.createOscillator();
-      oscillator.type = 'sine';
-      oscillator.frequency.setValueAtTime(440, 0);
-      oscillator.connect(audioContext.destination);
-      oscillator.start();
-      oscillator.stop(0.2);
+      // Play a higher tone for light mode - use the menu open sound
+      if (menuOpenSoundRef.current) {
+        menuOpenSoundRef.current.play().catch(e => console.error('Error playing sound:', e));
+      }
     }
     
     // Announce for screen readers
     setA11yMessage(`${newDarkMode ? 'Dark' : 'Light'} mode activated`);
+  };
+
+  // Function to navigate to a panner with an audio cue for accessibility
+  const navigateToPanner = (path: string) => {
+    // Play success tone
+    if (audioContextRef.current && audioContextRef.current.context) {
+      const ctx = audioContextRef.current.context;
+      const successOsc = ctx.createOscillator();
+      const successGain = ctx.createGain();
+        
+      // Success sound - rising pitch
+      successOsc.frequency.value = 440;
+      successOsc.frequency.linearRampToValueAtTime(880, ctx.currentTime + 0.2);
+      successGain.gain.value = 0.1;
+        
+      // Quick fade out
+      successGain.gain.setValueAtTime(0.1, ctx.currentTime);
+      successGain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+        
+      // Connect and play
+      successOsc.connect(successGain);
+      successGain.connect(ctx.destination);
+        
+      successOsc.start();
+      successOsc.stop(ctx.currentTime + 0.3);
+        
+      // Navigate after a slight delay to hear the tone
+      setTimeout(() => {
+        window.location.href = path;
+      }, 350);
+    } else {
+      // Fallback if audio context is not available
+      window.location.href = path;
+    }
+  };
+
+  const handlePanChange = (event: Event, newValue: number | number[]) => {
+    const value = typeof newValue === 'number' ? newValue : newValue[0];
+    setPanValue(value);
+    if (audioEngineRef.current) {
+      audioEngineRef.current.setPan(value);
+    }
+  };
+
+  // Initialize audio player
+  useEffect(() => {
+    if (!audioPlayerRef.current) {
+      audioPlayerRef.current = new Audio();
+      audioPlayerRef.current.preload = 'auto';
+    }
+  }, []);
+  
+  // Clean up object URLs when component unmounts
+  useEffect(() => {
+    return () => {
+      // Clean up any object URLs we created
+      audioFiles.forEach(file => {
+        if (file.path?.startsWith('blob:')) {
+          URL.revokeObjectURL(file.path);
+        }
+      });
+    };
+  }, [audioFiles]);
+
+  // Function to handle audio loading errors
+  const handleAudioError = (errorMessage: string) => {
+    setError(errorMessage);
+    setIsLoading(false);
+    
+    // Show error message for screen readers
+    setA11yMessage(`Error: ${errorMessage}`);
+    
+    // Clear error after 5 seconds
+    setTimeout(() => {
+      setError(null);
+    }, 5000);
+  };
+  
+  // Update file upload handler
+  const handleFileUpload = async (file: File) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      // Create object URL for the audio
+      const objectUrl = URL.createObjectURL(file);
+      
+      // Create new audio file entry
+      const newAudioFile: AudioFile = {
+        id: `file-${Date.now()}`,
+        name: file.name,
+        lastUsed: new Date().toLocaleString(),
+        path: objectUrl,
+        objectUrl: objectUrl
+      };
+      
+      // Set up audio player and wait for it to load
+      if (audioPlayerRef.current) {
+        return new Promise<void>((resolve, reject) => {
+          if (!audioPlayerRef.current) return reject('Audio player not initialized');
+          
+          audioPlayerRef.current.onloadeddata = () => {
+            console.log('Audio data loaded');
+            resolve();
+          };
+          
+          audioPlayerRef.current.onerror = () => {
+            const error = audioPlayerRef.current?.error;
+            reject(error?.message || 'Failed to load audio file');
+          };
+          
+          audioPlayerRef.current.src = objectUrl;
+          audioPlayerRef.current.load();
+        })
+        .then(() => {
+          // Update audio files list
+          setAudioFiles(prev => [...prev, newAudioFile]);
+          setSelectedAudio(newAudioFile);
+          
+          // Update audio track config
+          setAudioTrackConfig(prev => ({
+            ...prev,
+            filePath: objectUrl
+          }));
+          
+          // Show success message for screen readers
+          setA11yMessage(`File ${file.name} uploaded successfully`);
+          setIsLoading(false);
+        })
+        .catch(error => {
+          handleAudioError(error.toString());
+          URL.revokeObjectURL(objectUrl);
+        });
+      }
+    } catch (error) {
+      handleAudioError(error instanceof Error ? error.message : 'Failed to process audio file');
+    }
+  };
+  
+  // Update the file input handler
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    
+    const file = files[0];
+    handleFileUpload(file);
   };
 
   return (
@@ -521,6 +978,7 @@ export function EMDRProcessor() {
       <audio ref={playStatusSoundRef} src="/sounds/status-change.mp3" preload="auto" />
       <audio 
         ref={audioPlayerRef}
+        loop={true} 
         onPlay={() => {
           console.log("Audio play event triggered");
           setIsPlaying(true);
@@ -531,13 +989,27 @@ export function EMDRProcessor() {
         }}
         onEnded={() => {
           console.log("Audio ended event triggered");
+          // Don't stop the animation if the audio is set to loop
+          if (audioPlayerRef.current && !audioPlayerRef.current.loop) {
           setIsPlaying(false);
           setA11yMessage('Audio ended. Visual target stopped.');
+          }
         }}
         onError={(e) => {
           console.error("Audio error:", audioPlayerRef.current?.error);
+          // Try to recover from error by reloading the audio
+          if (audioPlayerRef.current && selectedAudio) {
+            console.log("Attempting to recover from audio error");
+            audioPlayerRef.current.load();
+            audioPlayerRef.current.play().catch(err => {
+              console.error("Recovery failed:", err);
           setIsPlaying(false);
           setA11yMessage('Error playing audio. Visual target stopped.');
+            });
+          } else {
+            setIsPlaying(false);
+            setA11yMessage('Error playing audio. Visual target stopped.');
+          }
         }}
       >
         {/* Provide explicit source with type for better browser compatibility */}
@@ -609,137 +1081,369 @@ export function EMDRProcessor() {
           </div>
         </div>
         
-        {/* Audio Selection Section */}
+        {/* Audio Mode Selection */}
         <div className="mb-6">
-          <h3 className="text-xl font-bold text-white dark:text-white text-gray-800 mb-4">Audio Selection</h3>
+          <h3 className="text-xl font-bold text-white dark:text-white text-gray-800 mb-4">Audio Mode</h3>
           
-          {/* Upload Audio */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
-            <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Upload Your Audio</h4>
-            <input 
-              type="file" 
-              accept="audio/*"
-              className={`w-full text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-500'} file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold ${isDarkMode ? 'file:bg-blue-900 file:text-blue-200' : 'file:bg-blue-50 file:text-blue-700'} ${isDarkMode ? 'hover:file:bg-blue-800' : 'hover:file:bg-blue-100'}`}
-            />
-            
-            <button 
-              className={`w-full mt-3 ${isDarkMode ? 'bg-blue-900 hover:bg-blue-800 text-blue-200' : 'bg-blue-100 hover:bg-blue-200 text-blue-800'} py-2 px-4 rounded flex items-center justify-center`}
-              onClick={() => {}}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2">
-                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
-              </svg>
-              Show Your Song Library (0)
-            </button>
-          </div>
-          
-          {/* Sample Audio */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
-            <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Sample Audio</h4>
-            <div className="grid grid-cols-2 gap-2">
-              <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-3 rounded text-sm text-left ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                White noise for focus and relaxation
+          <div className="space-y-4">
+            <h3 className="text-lg font-medium">Audio Mode</h3>
+            <div className="flex items-center space-x-4">
+              <button
+                onClick={() => {
+                  setAudioMode('click');
+                  audioEngineRef.current?.setAudioMode('click');
+                }}
+                className={`px-4 py-2 rounded ${
+                  audioMode === 'click'
+                    ? 'bg-violet-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                Click Mode
               </button>
-              <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-3 rounded text-sm text-left ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                Clean 440Hz sine wave tone
-              </button>
-              <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-3 rounded text-sm text-left ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                Deeper 220Hz sine wave tone
-              </button>
-              <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-3 rounded text-sm text-left ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                Soft triangle wave for gentle stimulation
-              </button>
-              <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-3 rounded text-sm text-left ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                Gentle pink noise for relaxation
+              <button
+                onClick={() => {
+                  setAudioMode('audioTrack');
+                  audioEngineRef.current?.setAudioMode('audioTrack');
+                }}
+                className={`px-4 py-2 rounded ${
+                  audioMode === 'audioTrack'
+                    ? 'bg-violet-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                Audio Track Mode
               </button>
             </div>
           </div>
         </div>
         
-        {/* Session Controls */}
+        {/* Common Settings - shown for all modes */}
         <div className="mb-6">
-          <h3 className="text-xl font-bold text-white dark:text-white text-gray-800 mb-4">Session Controls</h3>
+          <h3 className="text-xl font-bold text-white dark:text-white text-gray-800 mb-4">Session Settings</h3>
           
-          {/* Session Timing */}
           <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
-            <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Session Timing</h4>
+            <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Panning Parameters</h4>
             
-            <div className="mb-4">
+            <div className="mb-3">
               <div className="flex justify-between mb-1">
-                <label className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>Start Time: 0:00</label>
+                <label className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                  Frequency: {bpm} BPM
+                </label>
               </div>
               <input 
                 type="range" 
-                min="0" 
-                max="100" 
+                min="6" 
+                max="120" 
+                step="1"
+                value={bpm}
+                onChange={(e) => setBpm(Number(e.target.value))}
                 className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
+                aria-label="Panning frequency in BPM"
               />
-              <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mt-1`}>Position in the audio to start playback</p>
+              <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mt-1`}>
+                Speed of panning in beats per minute (lower = slower)
+              </p>
             </div>
             
-            <div className="mb-4">
+            {/* BPM presets */}
+            <div className="flex flex-wrap gap-2 mt-3 mb-4">
+              {[6, 12, 24, 40, 60, 90].map(presetBpm => (
+                <button
+                  key={presetBpm}
+                  onClick={() => setBpm(presetBpm)}
+                  className={`px-2 py-1 text-xs ${
+                    bpm === presetBpm
+                    ? 'bg-blue-600 text-white'
+                    : isDarkMode
+                      ? 'bg-gray-700 hover:bg-gray-600 text-gray-200'
+                      : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                  } rounded`}
+                >
+                  {presetBpm} BPM
+                </button>
+              ))}
+            </div>
+            
+            <div className="mb-3">
               <div className="flex justify-between mb-1">
-                <label className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>Session Duration: 1:00</label>
+                <label className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                  Pan Width: {panWidthPercent}%
+                </label>
               </div>
               <input 
                 type="range" 
-                min="0" 
+                min="10" 
                 max="100" 
+                step="5"
+                value={panWidthPercent}
+                onChange={(e) => setPanWidthPercent(Number(e.target.value))}
                 className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
+                aria-label="Pan width percentage"
               />
-              <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mt-1`}>How long the session should last before fading out</p>
+              <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mt-1`}>
+                Percentage of complete left-right panning
+              </p>
             </div>
-            
-            <div className="grid grid-cols-5 gap-2">
-              <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-2 rounded text-xs ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>1:00</button>
-              <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-2 rounded text-xs ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>3:00</button>
-              <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-2 rounded text-xs ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>5:00</button>
-              <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-2 rounded text-xs ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>10:00</button>
-              <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-2 rounded text-xs ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>Full</button>
-            </div>
-          </div>
-          
-          {/* Pan Settings */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
-            <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Current Pan: 0.50 (Audio API: 0.00)</h4>
-            <div className="flex items-center mb-1">
-              <span className={`text-xs ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>L</span>
-              <input 
-                type="range" 
-                min="0" 
-                max="100" 
-                className={`flex-1 mx-2 h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
-              />
-              <span className={`text-xs ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>R</span>
-            </div>
-            <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mt-1`}>Manual control overrides sine wave while adjusting</p>
-          </div>
-          
-          {/* Volume Control */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
-            <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Volume: 70%</h4>
-            <input 
-              type="range" 
-              min="0" 
-              max="100" 
-              className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
-            />
           </div>
         </div>
+        
+        {/* Audio Track Settings */}
+        {audioMode === 'audioTrack' && (
+          <div className="mb-6">
+            <h3 className="text-xl font-bold text-white dark:text-white text-gray-800 mb-4">Audio Track</h3>
+            
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
+              <div className="text-center p-6 border-2 border-dashed rounded-lg border-gray-400 dark:border-gray-600">
+                <h4 className={`font-bold mb-4 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Upload Your Audio</h4>
+                <p className={`text-sm mb-4 ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                  Upload an MP3 file to create a bilateral stimulation track
+                </p>
+                
+                {/* Error message */}
+                {error && (
+                  <div className={`mb-4 p-3 rounded ${isDarkMode ? 'bg-red-900 text-red-200' : 'bg-red-100 text-red-800'}`} role="alert">
+                    {error}
+                  </div>
+                )}
+                
+                <input 
+                  type="file" 
+                  accept="audio/*"
+                  className={`hidden`}
+                  id="audio-upload"
+                  onChange={handleFileInputChange}
+                  disabled={isLoading}
+                  aria-label="Upload audio file"
+                />
+                <label 
+                  htmlFor="audio-upload"
+                  className={`inline-block px-6 py-3 ${
+                    isLoading
+                      ? isDarkMode ? 'bg-gray-700 cursor-wait' : 'bg-gray-200 cursor-wait'
+                      : isDarkMode 
+                        ? 'bg-blue-600 hover:bg-blue-500 cursor-pointer' 
+                        : 'bg-blue-100 hover:bg-blue-200 cursor-pointer'
+                  } text-${isDarkMode ? 'white' : 'blue-800'} rounded-lg transition-colors duration-200`}
+                  role="button"
+                  tabIndex={0}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      document.getElementById('audio-upload')?.click();
+                    }
+                  }}
+                >
+                  {isLoading ? (
+                    <div className="flex items-center">
+                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Processing...
+                    </div>
+                  ) : (
+                    'Choose File'
+                  )}
+                </label>
+                <p className={`mt-2 text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                  {selectedAudio ? selectedAudio.name : 'No file chosen'}
+                </p>
+              </div>
+              
+              {/* Song Library Button */}
+              <button 
+                className={`w-full mt-4 ${
+                  isDarkMode 
+                    ? 'bg-blue-900 hover:bg-blue-800 text-blue-200' 
+                    : 'bg-blue-100 hover:bg-blue-200 text-blue-800'
+                } py-3 px-4 rounded-lg flex items-center justify-center transition-colors duration-200`}
+                onClick={() => setShowLibrary(!showLibrary)}
+                aria-expanded={showLibrary}
+                aria-label="Toggle song library"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2">
+                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                </svg>
+                Your Song Library ({audioFiles.length})
+              </button>
+              
+              {/* Song Library Panel */}
+              {showLibrary && (
+                <div className={`mt-4 p-4 rounded-lg ${isDarkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                  <h5 className={`font-medium mb-3 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                    Recent Songs
+                  </h5>
+                  {audioFiles.length === 0 ? (
+                    <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                      No songs in library yet
+                    </p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {audioFiles
+                        .sort((a, b) => new Date(b.lastUsed).getTime() - new Date(a.lastUsed).getTime())
+                        .map(file => (
+                          <li 
+                            key={file.id}
+                            className={`flex items-center justify-between p-2 rounded ${
+                              selectedAudio?.id === file.id
+                                ? isDarkMode ? 'bg-blue-900' : 'bg-blue-100'
+                                : isDarkMode ? 'hover:bg-gray-600' : 'hover:bg-gray-200'
+                            } cursor-pointer`}
+                            onClick={() => selectAudioFile(file)}
+                            role="button"
+                            tabIndex={0}
+                            onKeyPress={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                selectAudioFile(file);
+                              }
+                            }}
+                          >
+                            <div>
+                              <div className={`font-medium ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                                {file.name}
+                              </div>
+                              <div className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                Last used: {file.lastUsed}
+                              </div>
+                            </div>
+                            <button
+                              onClick={(e) => deleteAudioFile(file.id, e)}
+                              className={`p-1 rounded-full ${
+                                isDarkMode 
+                                  ? 'hover:bg-red-900 text-red-400' 
+                                  : 'hover:bg-red-100 text-red-600'
+                              }`}
+                              aria-label={`Delete ${file.name}`}
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M3 6h18"></path>
+                                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                              </svg>
+                            </button>
+                          </li>
+                        ))}
+                    </ul>
+                  )}
+                  
+                  {/* Volume Control */}
+                  <div className="mt-4">
+                    <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                      Volume
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={isDarkMode ? 'text-gray-400' : 'text-gray-600'}>
+                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                        <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+                      </svg>
+                      <input 
+                        type="range" 
+                        min="0" 
+                        max="1" 
+                        step="0.1"
+                        value={audioTrackConfig.volume}
+                        onChange={(e) => {
+                          const newVolume = parseFloat(e.target.value);
+                          setAudioTrackConfig(prev => ({
+                            ...prev,
+                            volume: newVolume
+                          }));
+                          
+                          // Update audio player volume
+                          if (audioPlayerRef.current) {
+                            audioPlayerRef.current.volume = newVolume;
+                          }
+                        }}
+                        className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
+                        aria-label="Audio volume"
+                      />
+                      <span className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                        {Math.round(audioTrackConfig.volume * 100)}%
+                      </span>
+                    </div>
+                  </div>
+                  
+                  {/* Loop Toggle */}
+                  <div className="mt-4 flex items-center justify-between">
+                    <label className={`text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                      Loop Audio
+                    </label>
+                    <button
+                      role="switch"
+                      aria-checked={audioTrackConfig.loop}
+                      onClick={() => {
+                        setAudioTrackConfig(prev => ({
+                          ...prev,
+                          loop: !prev.loop
+                        }));
+                        
+                        // Update audio player loop setting
+                        if (audioPlayerRef.current) {
+                          audioPlayerRef.current.loop = !audioTrackConfig.loop;
+                        }
+                      }}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                        audioTrackConfig.loop
+                          ? isDarkMode ? 'bg-blue-600' : 'bg-blue-500'
+                          : isDarkMode ? 'bg-gray-600' : 'bg-gray-300'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          audioTrackConfig.loop ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
-        <div className="flex flex-col gap-4 mb-8">
-          <Link href="/" passHref className="w-full">
-            <button className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xl font-bold py-3 px-6 rounded">
-              Simple Panner
-            </button>
-          </Link>
+        {/* Session Timer Settings */}
+        <div className="mb-6">
+          <h3 className="text-xl font-bold text-white dark:text-white text-gray-800 mb-4">Session Timer</h3>
           
-          <Link href="/beat-sync" passHref className="w-full">
-            <button className="w-full bg-purple-600 hover:bg-purple-500 text-white text-xl font-bold py-3 px-6 rounded relative group">
-              Beat-Sync Panner
-              <span className="absolute top-0 right-0 -mt-2 -mr-2 bg-yellow-400 text-black text-xs px-2 py-1 rounded-full font-bold transform group-hover:scale-110 transition-transform">NEW</span>
-            </button>
-          </Link>
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-4">
+            <div className="mb-3">
+              <div className="flex justify-between mb-1">
+                <label className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                  Duration: {sessionDuration} seconds
+                </label>
+              </div>
+              <input 
+                type="range" 
+                min="10" 
+                max="120" 
+                step="5"
+                value={sessionDuration}
+                onChange={(e) => setSessionDuration(Number(e.target.value))}
+                className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
+                aria-label="Session duration in seconds"
+              />
+            </div>
+            
+            {/* Duration presets */}
+            <div className="flex flex-wrap gap-2 mt-3">
+              {[10, 30, 60, 90, 120].map(duration => (
+                <button
+                  key={duration}
+                  onClick={() => setSessionDuration(duration)}
+                  className={`px-2 py-1 text-xs ${
+                    sessionDuration === duration
+                    ? 'bg-blue-600 text-white'
+                    : isDarkMode
+                      ? 'bg-gray-700 hover:bg-gray-600 text-gray-200'
+                      : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                  } rounded`}
+                >
+                  {duration}s
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -763,7 +1467,24 @@ export function EMDRProcessor() {
       
       {/* Minimalist Audio Player Controls */}
       <div className={`fixed bottom-6 left-1/2 transform -translate-x-1/2 ${isDarkMode ? 'bg-gray-800' : 'bg-gray-200'} bg-opacity-80 p-4 rounded-full shadow-lg z-10`}>
-        {selectedAudio ? (
+        {audioMode === 'click' ? (
+          <button
+            onClick={togglePlayPause}
+            className="bg-blue-600 hover:bg-blue-500 text-white rounded-full p-4 flex items-center justify-center"
+            aria-label={isPlaying ? "Pause" : "Play"}
+          >
+            {isPlaying ? (
+              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="6" y="4" width="4" height="16"></rect>
+                <rect x="14" y="4" width="4" height="16"></rect>
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+              </svg>
+            )}
+          </button>
+        ) : selectedAudio ? (
           <div className="flex items-center gap-4">
             <button
               onClick={togglePlayPause}
@@ -799,6 +1520,15 @@ export function EMDRProcessor() {
           </button>
         )}
       </div>
+
+      {/* Session Timer Display */}
+      {timeRemaining !== null && (
+        <div className={`fixed top-6 left-1/2 transform -translate-x-1/2 ${
+          isDarkMode ? 'bg-gray-800 text-white' : 'bg-gray-200 text-gray-900'
+        } px-6 py-3 rounded-full text-2xl font-bold z-20`}>
+          {formatTime(timeRemaining)}
+        </div>
+      )}
     </div>
   );
 } 

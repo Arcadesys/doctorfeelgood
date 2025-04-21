@@ -61,19 +61,58 @@ export class AudioEngine {
       // Set audio element if provided
       if (audioElement) {
         this.audioElement = audioElement;
-        this.audioTrackNode = this.context.createMediaElementSource(audioElement);
-        this.audioTrackNode.connect(this.gainNode);
-        this.audioElementConnected = true;
+        
+        // Wait for the audio element to be ready
+        if (audioElement.readyState < 2) { // HAVE_CURRENT_DATA
+          await new Promise<void>((resolve, reject) => {
+            const handleCanPlay = () => {
+              audioElement.removeEventListener('canplay', handleCanPlay);
+              audioElement.removeEventListener('error', handleError);
+              resolve();
+            };
+            const handleError = (e: Event) => {
+              audioElement.removeEventListener('canplay', handleCanPlay);
+              audioElement.removeEventListener('error', handleError);
+              console.error('Audio failed to load:', e);
+              reject(new Error('Audio failed to load'));
+            };
+            audioElement.addEventListener('canplay', handleCanPlay);
+            audioElement.addEventListener('error', handleError);
+          });
+        }
+        
+        try {
+          this.audioTrackNode = this.context.createMediaElementSource(audioElement);
+          this.audioTrackNode.connect(this.gainNode);
+          this.audioElementConnected = true;
+        } catch (err) {
+          console.error('Failed to create media element source:', err);
+          // Create fallback oscillator
+          this.createFallbackTones();
+          return true; // Still return true as we have a fallback
+        }
       }
       
       // Load click samples
       await this.loadClickSamples();
       
+      // Resume context if suspended (needed for some browsers)
+      if (this.context.state === 'suspended') {
+        await this.context.resume();
+      }
+      
       console.log('AudioEngine initialized successfully');
       return true;
     } catch (error) {
       console.error('Failed to initialize AudioEngine:', error);
-      return false;
+      // Try to create fallback tones even if initialization fails
+      try {
+        this.createFallbackTones();
+        return true;
+      } catch (fallbackError) {
+        console.error('Failed to create fallback tones:', fallbackError);
+        return false;
+      }
     }
   }
   

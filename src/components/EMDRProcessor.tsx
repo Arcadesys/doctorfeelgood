@@ -1029,6 +1029,7 @@ export function EMDRProcessor() {
       <audio 
         ref={audioPlayerRef}
         loop={true} 
+        preload="auto"
         onPlay={() => {
           console.log("Audio play event triggered");
           setIsPlaying(true);
@@ -1039,10 +1040,9 @@ export function EMDRProcessor() {
         }}
         onEnded={() => {
           console.log("Audio ended event triggered");
-          // Don't stop the animation if the audio is set to loop
           if (audioPlayerRef.current && !audioPlayerRef.current.loop) {
-          setIsPlaying(false);
-          setA11yMessage('Audio ended. Visual target stopped.');
+            setIsPlaying(false);
+            setA11yMessage('Audio ended. Visual target stopped.');
           }
         }}
         onError={(e) => {
@@ -1053,17 +1053,23 @@ export function EMDRProcessor() {
             audioPlayerRef.current.load();
             audioPlayerRef.current.play().catch(err => {
               console.error("Recovery failed:", err);
-          setIsPlaying(false);
-          setA11yMessage('Error playing audio. Visual target stopped.');
+              setIsPlaying(false);
+              setA11yMessage('Error playing audio. Visual target stopped.');
             });
           } else {
             setIsPlaying(false);
             setA11yMessage('Error playing audio. Visual target stopped.');
           }
         }}
+        onLoadStart={() => console.log("Audio load started")}
+        onLoadedData={() => console.log("Audio data loaded")}
+        onCanPlay={() => console.log("Audio can play")}
       >
-        {/* Provide explicit source with type for better browser compatibility */}
+        {/* Add multiple source formats for better browser compatibility */}
         <source src="/audio/sine-440hz.mp3" type="audio/mpeg" />
+        <source src="/audio/sine-440hz.ogg" type="audio/ogg" />
+        {/* Fallback to a basic sine wave if needed */}
+        <source src="/audio/sine-220hz.mp3" type="audio/mpeg" />
         Your browser does not support the audio element.
       </audio>
       

@@ -1,0 +1,77 @@
+{
+  "git": {
+    "branchNaming": "feature/*|bugfix/*|hotfix/*|release/*",
+    "commitMessageFormat": "type(scope): description",
+    "prTemplate": {
+      "required": ["description", "testing", "accessibility"],
+      "sections": [
+        "## Changes",
+        "## Testing",
+        "## Accessibility",
+        "## Screenshots"
+      ]
+    }
+  },
+  "code": {
+    "testing": {
+      "coverage": {
+        "statements": 80,
+        "branches": 70,
+        "functions": 80,
+        "lines": 80
+      },
+      "required": ["unit", "integration"],
+      "naming": "*.test.ts|*.test.tsx"
+    },
+    "typescript": {
+      "strict": true,
+      "noImplicitAny": true,
+      "noUnusedLocals": true,
+      "noUnusedParameters": true
+    },
+    "react": {
+      "componentNaming": "PascalCase",
+      "propsInterface": "ComponentNameProps",
+      "requiredProps": ["aria-label", "role"]
+    },
+    "accessibility": {
+      "required": [
+        "aria-label",
+        "aria-describedby",
+        "role",
+        "tabIndex",
+        "keyboardNavigation"
+      ],
+      "colorContrast": "WCAG AA",
+      "semanticHTML": true
+    },
+    "audio": {
+      "formats": ["mp3", "wav"],
+      "maxFileSize": "5MB",
+      "requiredMetadata": ["duration", "sampleRate"]
+    }
+  },
+  "linting": {
+    "eslint": {
+      "extends": ["next/core-web-vitals", "plugin:jsx-a11y/recommended"],
+      "rules": {
+        "react-hooks/rules-of-hooks": "error",
+        "react-hooks/exhaustive-deps": "warn",
+        "@typescript-eslint/no-unused-vars": "error"
+      }
+    },
+    "prettier": {
+      "printWidth": 100,
+      "singleQuote": true,
+      "trailingComma": "es5"
+    }
+  },
+  "documentation": {
+    "required": ["README.md", "CHANGELOG.md"],
+    "components": {
+      "props": true,
+      "examples": true,
+      "accessibility": true
+    }
+  }
+} 

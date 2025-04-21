@@ -1,32 +1,11 @@
 // Audio Engine for EMDR Processor
 
-// Types for audio engine
-export type OscillatorType = 'sine' | 'square' | 'sawtooth' | 'triangle';
-export type AudioMode = 'synthesizer' | 'audioTrack';
-
-export interface ADSREnvelope {
-  attack: number;  // Time in seconds
-  decay: number;   // Time in seconds
-  sustain: number; // Level 0-1
-  release: number; // Time in seconds
-}
+export type AudioMode = 'click' | 'audioTrack';
 
 export interface ContactSoundConfig {
-  leftFrequency: number;
-  rightFrequency: number;
-  duration: number;
-  oscillatorType: OscillatorType;
+  leftSamplePath: string;
+  rightSamplePath: string;
   volume: number;
-  enabled: boolean;
-}
-
-export interface ConstantToneConfig {
-  isOscillator: boolean;
-  oscillatorType: OscillatorType;
-  frequency: number;
-  audioPath?: string;
-  volume: number;
-  envelope: ADSREnvelope;
   enabled: boolean;
 }
 
@@ -39,36 +18,23 @@ export interface AudioTrackConfig {
 // Main Audio Engine Class
 export class AudioEngine {
   private context: AudioContext | null = null;
-  private constantToneNode: OscillatorNode | null = null;
   private audioTrackNode: MediaElementAudioSourceNode | null = null;
   private gainNode: GainNode | null = null;
   private pannerNode: StereoPannerNode | null = null;
   private audioElement: HTMLAudioElement | null = null;
   private isPlaying = false;
-  private currentMode: AudioMode = 'synthesizer';
-  private audioElementConnected = false; // Track if the audio element has been connected
+  private currentMode: AudioMode = 'click';
+  private audioElementConnected = false;
+  
+  // Sample buffers for contact sounds
+  private leftClickBuffer: AudioBuffer | null = null;
+  private rightClickBuffer: AudioBuffer | null = null;
   
   // Configuration
   private contactSoundConfig: ContactSoundConfig = {
-    leftFrequency: 330,
-    rightFrequency: 440,
-    duration: 0.1,
-    oscillatorType: 'sine',
+    leftSamplePath: '/sounds/click-left.mp3',
+    rightSamplePath: '/sounds/click-right.mp3',
     volume: 0.5,
-    enabled: true
-  };
-  
-  private constantToneConfig: ConstantToneConfig = {
-    isOscillator: true,
-    oscillatorType: 'sine',
-    frequency: 440,
-    volume: 0.7,
-    envelope: {
-      attack: 0.1,
-      decay: 0.2,
-      sustain: 0.7,
-      release: 0.5
-    },
     enabled: true
   };
   
@@ -79,7 +45,7 @@ export class AudioEngine {
   };
 
   // Initialize the audio engine
-  public initialize(audioElement?: HTMLAudioElement): boolean {
+  public async initialize(audioElement?: HTMLAudioElement): Promise<boolean> {
     try {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       this.context = new AudioCtx();
@@ -95,13 +61,13 @@ export class AudioEngine {
       // Set audio element if provided
       if (audioElement) {
         this.audioElement = audioElement;
-        
-        // Create a MediaElementSourceNode right away and keep it for the lifetime
-        // of the audio engine instance
         this.audioTrackNode = this.context.createMediaElementSource(audioElement);
         this.audioTrackNode.connect(this.gainNode);
         this.audioElementConnected = true;
       }
+      
+      // Load click samples
+      await this.loadClickSamples();
       
       console.log('AudioEngine initialized successfully');
       return true;
@@ -109,6 +75,66 @@ export class AudioEngine {
       console.error('Failed to initialize AudioEngine:', error);
       return false;
     }
+  }
+  
+  // Load click samples
+  private async loadClickSamples(): Promise<void> {
+    if (!this.context) return;
+    
+    try {
+      const [leftResponse, rightResponse] = await Promise.all([
+        fetch(this.contactSoundConfig.leftSamplePath),
+        fetch(this.contactSoundConfig.rightSamplePath)
+      ]);
+      
+      if (!leftResponse.ok || !rightResponse.ok) {
+        console.warn('Click samples not found, using fallback tones');
+        // Create simple fallback tones instead of failing
+        this.createFallbackTones();
+        return;
+      }
+      
+      const [leftArrayBuffer, rightArrayBuffer] = await Promise.all([
+        leftResponse.arrayBuffer(),
+        rightResponse.arrayBuffer()
+      ]);
+      
+      try {
+        this.leftClickBuffer = await this.context.decodeAudioData(leftArrayBuffer);
+        this.rightClickBuffer = await this.context.decodeAudioData(rightArrayBuffer);
+        console.log('Click samples loaded successfully');
+      } catch (decodeError) {
+        console.warn('Failed to decode audio samples, using fallback tones:', decodeError);
+        this.createFallbackTones();
+      }
+    } catch (error) {
+      console.warn('Error loading click samples, using fallback tones:', error);
+      this.createFallbackTones();
+    }
+  }
+  
+  private createFallbackTones(): void {
+    if (!this.context) return;
+    
+    // Create simple sine wave buffers as fallback
+    const sampleRate = this.context.sampleRate;
+    const duration = 0.1; // 100ms
+    const frequency = 440; // A4 note
+    
+    const leftBuffer = this.context.createBuffer(1, sampleRate * duration, sampleRate);
+    const rightBuffer = this.context.createBuffer(1, sampleRate * duration, sampleRate);
+    
+    const leftData = leftBuffer.getChannelData(0);
+    const rightData = rightBuffer.getChannelData(0);
+    
+    for (let i = 0; i < leftBuffer.length; i++) {
+      const t = i / sampleRate;
+      leftData[i] = Math.sin(2 * Math.PI * frequency * t) * 0.5;
+      rightData[i] = Math.sin(2 * Math.PI * (frequency * 1.1) * t) * 0.5; // Slightly higher frequency for right
+    }
+    
+    this.leftClickBuffer = leftBuffer;
+    this.rightClickBuffer = rightBuffer;
   }
   
   // Clean up and release resources
@@ -122,17 +148,15 @@ export class AudioEngine {
     
     this.gainNode = null;
     this.pannerNode = null;
-    this.constantToneNode = null;
     this.audioTrackNode = null;
+    this.leftClickBuffer = null;
+    this.rightClickBuffer = null;
   }
   
-  // Set audio mode and stop any conflicting playback
+  // Set audio mode
   public setAudioMode(mode: AudioMode): void {
     if (this.currentMode === mode) return;
-    
-    // Stop current playback
     this.stopAll();
-    
     this.currentMode = mode;
     console.log(`Audio mode changed to: ${mode}`);
   }
@@ -142,44 +166,34 @@ export class AudioEngine {
     return this.currentMode;
   }
   
-  // Play a contact sound with panning (only in synthesizer mode)
+  // Play a contact sound with panning
   public playContactSound(isRightSide: boolean): void {
-    if (!this.context || !this.contactSoundConfig.enabled || this.currentMode !== 'synthesizer') return;
+    if (!this.context || !this.contactSoundConfig.enabled || this.currentMode !== 'click') return;
     
     try {
-      // Create oscillator for contact sound
-      const oscillator = this.context.createOscillator();
+      const buffer = isRightSide ? this.rightClickBuffer : this.leftClickBuffer;
+      if (!buffer) return;
+      
+      const source = this.context.createBufferSource();
       const soundGain = this.context.createGain();
       const soundPanner = this.context.createStereoPanner();
       
-      // Configure oscillator
-      oscillator.type = this.contactSoundConfig.oscillatorType;
-      const frequency = isRightSide 
-        ? this.contactSoundConfig.rightFrequency 
-        : this.contactSoundConfig.leftFrequency;
-      oscillator.frequency.setValueAtTime(frequency, this.context.currentTime);
-      
-      // Configure panning (force full left or right)
+      source.buffer = buffer;
+      soundGain.gain.value = this.contactSoundConfig.volume;
       soundPanner.pan.value = isRightSide ? 1 : -1;
       
-      // Configure gain
-      soundGain.gain.value = this.contactSoundConfig.volume;
-      
-      // Connect nodes
-      oscillator.connect(soundGain);
+      source.connect(soundGain);
       soundGain.connect(soundPanner);
       soundPanner.connect(this.context.destination);
       
-      // Play the sound
-      oscillator.start();
-      oscillator.stop(this.context.currentTime + this.contactSoundConfig.duration);
+      source.start();
       
       // Clean up
-      setTimeout(() => {
-        oscillator.disconnect();
+      source.onended = () => {
+        source.disconnect();
         soundGain.disconnect();
         soundPanner.disconnect();
-      }, this.contactSoundConfig.duration * 1000 + 100);
+      };
       
     } catch (error) {
       console.error('Error playing contact sound:', error);
@@ -191,12 +205,12 @@ export class AudioEngine {
     if (!this.context) return false;
     
     try {
-      if (this.currentMode === 'synthesizer') {
-        return this.startConstantTone();
+      if (this.currentMode === 'click') {
+        this.isPlaying = true;
+        return true;
       } else if (this.currentMode === 'audioTrack') {
-        // Handle the promise-based audio track start differently
         this.startAudioTrack();
-        return true; // Return true immediately, state will be updated by the promise
+        return true;
       }
       return false;
     } catch (error) {
@@ -207,90 +221,10 @@ export class AudioEngine {
   
   // Stop all audio playback
   public stopAll(): void {
-    if (this.currentMode === 'synthesizer') {
-      this.stopConstantTone();
+    if (this.currentMode === 'click') {
+      this.isPlaying = false;
     } else if (this.currentMode === 'audioTrack') {
       this.stopAudioTrack();
-    }
-  }
-  
-  // Start playing constant tone (synthesizer mode)
-  private startConstantTone(): boolean {
-    if (!this.context || this.isPlaying || !this.constantToneConfig.enabled || this.currentMode !== 'synthesizer') return false;
-    
-    try {
-      // Create and configure oscillator
-      const oscillator = this.context.createOscillator();
-      oscillator.type = this.constantToneConfig.oscillatorType;
-      oscillator.frequency.value = this.constantToneConfig.frequency;
-      
-      // Apply ADSR envelope
-      const envelope = this.constantToneConfig.envelope;
-      const currentTime = this.context.currentTime;
-      
-      // Initial gain to 0
-      if (this.gainNode) {
-        this.gainNode.gain.setValueAtTime(0, currentTime);
-        
-        // Attack
-        this.gainNode.gain.linearRampToValueAtTime(
-          this.constantToneConfig.volume, 
-          currentTime + envelope.attack
-        );
-        
-        // Decay and sustain
-        this.gainNode.gain.linearRampToValueAtTime(
-          this.constantToneConfig.volume * envelope.sustain, 
-          currentTime + envelope.attack + envelope.decay
-        );
-      }
-      
-      // Connect and start
-      if (this.gainNode) {
-        oscillator.connect(this.gainNode);
-        oscillator.start();
-        
-        this.constantToneNode = oscillator;
-        this.isPlaying = true;
-        return true;
-      }
-      return false;
-    } catch (error) {
-      console.error('Error starting oscillator:', error);
-      return false;
-    }
-  }
-  
-  // Stop playing constant tone
-  private stopConstantTone(): void {
-    if (!this.isPlaying || this.currentMode !== 'synthesizer') return;
-    
-    try {
-      if (this.constantToneNode) {
-        const oscillator = this.constantToneNode;
-        
-        // Apply release envelope
-        if (this.gainNode && this.context) {
-          const releaseTime = this.constantToneConfig.envelope.release;
-          this.gainNode.gain.setValueAtTime(this.gainNode.gain.value, this.context.currentTime);
-          this.gainNode.gain.exponentialRampToValueAtTime(0.0001, this.context.currentTime + releaseTime);
-          
-          // Stop oscillator after release
-          setTimeout(() => {
-            oscillator.stop();
-            oscillator.disconnect();
-            this.constantToneNode = null;
-          }, releaseTime * 1000 + 100);
-        } else {
-          oscillator.stop();
-          oscillator.disconnect();
-          this.constantToneNode = null;
-        }
-      }
-      
-      this.isPlaying = false;
-    } catch (error) {
-      console.error('Error stopping constant tone:', error);
     }
   }
   
@@ -299,22 +233,18 @@ export class AudioEngine {
     if (!this.context || this.isPlaying || this.currentMode !== 'audioTrack' || !this.audioElement) return;
     
     try {
-      // No need to create a new MediaElementSourceNode - we already did this in initialize()
       if (!this.audioElementConnected && this.audioTrackNode === null) {
         console.error('Audio element not properly connected');
         return;
       }
       
-      // Configure audio element
       this.audioElement.loop = this.audioTrackConfig.loop;
       this.audioElement.src = this.audioTrackConfig.filePath;
       
-      // Set volume
       if (this.gainNode) {
         this.gainNode.gain.value = this.audioTrackConfig.volume;
       }
       
-      // Add one-time event listeners for success and failure
       const onPlay = () => {
         this.isPlaying = true;
         this.audioElement?.removeEventListener('play', onPlay);
@@ -328,7 +258,6 @@ export class AudioEngine {
       this.audioElement.addEventListener('play', onPlay);
       this.audioElement.addEventListener('error', onError);
       
-      // Start playback
       this.audioElement.play();
     } catch (error) {
       console.error('Error starting audio track:', error);
@@ -341,16 +270,10 @@ export class AudioEngine {
     
     try {
       this.audioElement.pause();
+      this.audioElement.currentTime = 0;
       this.isPlaying = false;
     } catch (error) {
       console.error('Error stopping audio track:', error);
-    }
-  }
-  
-  // Set the pan value (-1 to 1)
-  public setPan(value: number): void {
-    if (this.pannerNode) {
-      this.pannerNode.pan.value = Math.max(-1, Math.min(1, value));
     }
   }
   
@@ -364,66 +287,20 @@ export class AudioEngine {
   // Update contact sound configuration
   public updateContactSoundConfig(config: Partial<ContactSoundConfig>): void {
     this.contactSoundConfig = { ...this.contactSoundConfig, ...config };
-  }
-  
-  // Update constant tone configuration
-  public updateConstantToneConfig(config: Partial<ConstantToneConfig>): void {
-    const newConfig = { ...this.constantToneConfig, ...config };
-    
-    // If oscillator type changed while playing, restart with new type
-    const restartNeeded = this.isPlaying && 
-      this.currentMode === 'synthesizer' &&
-      (this.constantToneConfig.oscillatorType !== newConfig.oscillatorType ||
-       this.constantToneConfig.frequency !== newConfig.frequency);
-       
-    this.constantToneConfig = newConfig;
-    
-    if (restartNeeded) {
-      this.stopConstantTone();
-      this.startConstantTone();
+    // Reload samples if paths changed
+    if (config.leftSamplePath || config.rightSamplePath) {
+      this.loadClickSamples();
     }
   }
   
   // Update audio track configuration
   public updateAudioTrackConfig(config: Partial<AudioTrackConfig>): void {
-    const newConfig = { ...this.audioTrackConfig, ...config };
-    
-    // If file path changed while playing, restart with new file
-    const restartNeeded = this.isPlaying && 
-      this.currentMode === 'audioTrack' &&
-      this.audioTrackConfig.filePath !== newConfig.filePath;
-      
-    this.audioTrackConfig = newConfig;
-    
-    if (restartNeeded && this.audioElement) {
-      const currentTime = this.audioElement.currentTime;
-      this.stopAudioTrack();
-      this.audioElement.src = newConfig.filePath;
-      this.startAudioTrack();
-      
-      // Try to restore position after a short delay to ensure track has loaded
-      if (this.audioElement) {
-        setTimeout(() => {
-          if (this.audioElement) {
-            this.audioElement.currentTime = currentTime;
-          }
-        }, 100);
-      }
-    }
-    
-    // Update loop setting even if not playing
-    if (this.audioElement && this.audioTrackConfig.loop !== newConfig.loop) {
-      this.audioElement.loop = newConfig.loop;
-    }
+    this.audioTrackConfig = { ...this.audioTrackConfig, ...config };
   }
   
   // Get current configs (for UI)
   public getContactSoundConfig(): ContactSoundConfig {
     return { ...this.contactSoundConfig };
-  }
-  
-  public getConstantToneConfig(): ConstantToneConfig {
-    return { ...this.constantToneConfig };
   }
   
   public getAudioTrackConfig(): AudioTrackConfig {
@@ -433,5 +310,11 @@ export class AudioEngine {
   // Check if audio is currently playing
   public getIsPlaying(): boolean {
     return this.isPlaying;
+  }
+
+  public setPan(value: number): void {
+    if (this.pannerNode) {
+      this.pannerNode.pan.setValueAtTime(value, this.context?.currentTime ?? 0);
+    }
   }
 } 

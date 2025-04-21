@@ -10,6 +10,8 @@ import {
   AudioTrackConfig,
   AudioMode
 } from '../lib/audioEngine';
+import { useRouter } from 'next/navigation';
+import CustomKnob from './CustomKnob';
 
 // Simple version without the File System Access API
 type AudioFile = {
@@ -36,13 +38,14 @@ export function EMDRProcessor() {
   const [a11yMessage, setA11yMessage] = useState<string>('Visual target ready. Audio controls available at bottom of screen.');
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [panValue, setPanValue] = useState(0); // -1 (left) to 1 (right)
+  const [panWidthPercent, setPanWidthPercent] = useState(80); // Percentage of maximum pan width
   const [audioMode, setAudioMode] = useState<AudioMode>('synthesizer');
   
   // Audio engine settings
   const [constantToneConfig, setConstantToneConfig] = useState<ConstantToneConfig>({
     isOscillator: true,
     oscillatorType: 'sine',
-    frequency: 440,
+    frequency: 0.4, // 24 BPM
     volume: 0.7,
     envelope: {
       attack: 0.1,
@@ -391,11 +394,10 @@ export function EMDRProcessor() {
       
       // Position and properties of the visual target
       let x = window.innerWidth / 2;
-      let direction = 1; // 1 = right, -1 = left
       const ballRadius = 20;
-      const moveSpeed = 3;
       const maxX = window.innerWidth - ballRadius;
       const minX = ballRadius;
+      const startTime = Date.now(); // Keep track of when animation started
       
       // Animation function
       const animate = () => {
@@ -413,12 +415,25 @@ export function EMDRProcessor() {
         // Clear canvas
         ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
         
-        // Move ball
-        x += moveSpeed * direction;
+        // Calculate position based on time and BPM
+        const bpm = constantToneConfig.frequency * 60; // Convert Hz to BPM
+        const cycleTimeInSeconds = 60 / bpm; // Time for one complete cycle
+        const elapsedTime = (Date.now() - startTime) / 1000;
+        const positionInCycle = (elapsedTime % cycleTimeInSeconds) / cycleTimeInSeconds; // 0 to 1 within cycle
+        
+        // Convert to a sine wave position -1 to 1
+        const sineValue = Math.sin(positionInCycle * Math.PI * 2);
+        
+        // Scale based on canvas width
+        const centerX = window.innerWidth / 2;
+        const fullAmplitude = (maxX - minX) / 2 - ballRadius; // Maximum possible distance from center
+        const maxAmplitude = fullAmplitude * (panWidthPercent / 100); // Scale by user's pan width setting
+        
+        // Calculate new x position
+        x = centerX + (sineValue * maxAmplitude);
         
         // Calculate normalized position for panning (-1 to 1)
-        // -1 = far left, 0 = center, 1 = far right
-        const normalizedX = (2 * (x - minX) / (maxX - minX)) - 1;
+        const normalizedX = sineValue;
         setPanValue(normalizedX);
         
         // Update audio engine panning
@@ -426,15 +441,17 @@ export function EMDRProcessor() {
           audioEngineRef.current.setPan(normalizedX);
         }
         
-        // Reverse direction if hitting edge
-        if (x > maxX || x < minX) {
-          const hitRightWall = x > maxX;
-          direction *= -1;
-          console.log(`Reversing direction at ${hitRightWall ? 'right' : 'left'} wall, now:`, direction);
+        // Check if we're at the peaks of the sine wave (when abs(sine) is near 1)
+        // We use a small threshold to avoid triggering multiple times
+        const peakThreshold = 0.95; // Trigger when within 5% of peak
+        if (Math.abs(sineValue) >= peakThreshold) {
+          // Only trigger if we haven't recently triggered for this peak
+          // We can determine left/right based on the sign of the sine value
+          const isRightPeak = sineValue > 0;
           
           // Play contact sound using audio engine
           if (audioEngineRef.current) {
-            audioEngineRef.current.playContactSound(hitRightWall);
+            audioEngineRef.current.playContactSound(!isRightPeak);
           }
         }
         
@@ -667,9 +684,9 @@ export function EMDRProcessor() {
         setA11yMessage(`Playing ${mode === 'synthesizer' ? 'synthesizer' : 'audio track'}. Visual target active.`);
         
         // Play status sound
-        playStatusSoundRef.current?.play().catch(e => console.error('Error playing status sound:', e));
+          playStatusSoundRef.current?.play().catch(e => console.error('Error playing status sound:', e));
         console.log("Setting isPlaying to true");
-        setIsPlaying(true);
+          setIsPlaying(true);
       } else {
         console.error("Failed to start playback");
       }
@@ -716,29 +733,55 @@ export function EMDRProcessor() {
     if (newDarkMode) {
       document.documentElement.classList.add('dark');
       localStorage.setItem('theme', 'dark');
-      // Play a deeper tone for dark mode
-      const audioContext = new AudioContext();
-      const oscillator = audioContext.createOscillator();
-      oscillator.type = 'sine';
-      oscillator.frequency.setValueAtTime(220, 0);
-      oscillator.connect(audioContext.destination);
-      oscillator.start();
-      oscillator.stop(0.2);
+      // Play a deeper tone for dark mode - use the menu close sound
+      if (menuCloseSoundRef.current) {
+        menuCloseSoundRef.current.play().catch(e => console.error('Error playing sound:', e));
+      }
     } else {
       document.documentElement.classList.remove('dark');
       localStorage.setItem('theme', 'light');
-      // Play a higher tone for light mode
-      const audioContext = new AudioContext();
-      const oscillator = audioContext.createOscillator();
-      oscillator.type = 'sine';
-      oscillator.frequency.setValueAtTime(440, 0);
-      oscillator.connect(audioContext.destination);
-      oscillator.start();
-      oscillator.stop(0.2);
+      // Play a higher tone for light mode - use the menu open sound
+      if (menuOpenSoundRef.current) {
+        menuOpenSoundRef.current.play().catch(e => console.error('Error playing sound:', e));
+      }
     }
     
     // Announce for screen readers
     setA11yMessage(`${newDarkMode ? 'Dark' : 'Light'} mode activated`);
+  };
+
+  // Function to navigate to a panner with an audio cue for accessibility
+  const navigateToPanner = (path: string) => {
+    // Play success tone
+    if (audioContextRef.current && audioContextRef.current.context) {
+      const ctx = audioContextRef.current.context;
+      const successOsc = ctx.createOscillator();
+      const successGain = ctx.createGain();
+        
+      // Success sound - rising pitch
+      successOsc.frequency.value = 440;
+      successOsc.frequency.linearRampToValueAtTime(880, ctx.currentTime + 0.2);
+      successGain.gain.value = 0.1;
+        
+      // Quick fade out
+      successGain.gain.setValueAtTime(0.1, ctx.currentTime);
+      successGain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+        
+      // Connect and play
+      successOsc.connect(successGain);
+      successGain.connect(ctx.destination);
+        
+      successOsc.start();
+      successOsc.stop(ctx.currentTime + 0.3);
+        
+      // Navigate after a slight delay to hear the tone
+      setTimeout(() => {
+        window.location.href = path;
+      }, 350);
+    } else {
+      // Fallback if audio context is not available
+      window.location.href = path;
+    }
   };
 
   // Handle oscillator type change
@@ -797,8 +840,8 @@ export function EMDRProcessor() {
           console.log("Audio ended event triggered");
           // Don't stop the animation if the audio is set to loop
           if (audioPlayerRef.current && !audioPlayerRef.current.loop) {
-            setIsPlaying(false);
-            setA11yMessage('Audio ended. Visual target stopped.');
+          setIsPlaying(false);
+          setA11yMessage('Audio ended. Visual target stopped.');
           }
         }}
         onError={(e) => {
@@ -809,8 +852,8 @@ export function EMDRProcessor() {
             audioPlayerRef.current.load();
             audioPlayerRef.current.play().catch(err => {
               console.error("Recovery failed:", err);
-              setIsPlaying(false);
-              setA11yMessage('Error playing audio. Visual target stopped.');
+          setIsPlaying(false);
+          setA11yMessage('Error playing audio. Visual target stopped.');
             });
           } else {
             setIsPlaying(false);
@@ -926,144 +969,85 @@ export function EMDRProcessor() {
           </div>
         </div>
         
-        {/* Synthesizer Mode Settings - only shown when in synthesizer mode */}
-        {audioMode === 'synthesizer' && (
-          <>
-            {/* Constant Tone Section */}
-            <div className="mb-6">
-              <h3 className="text-xl font-bold text-white dark:text-white text-gray-800 mb-4">Constant Tone</h3>
-              
-              <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
-                {/* Enable/disable toggle */}
-                <div className="flex items-center justify-between mb-4">
-                  <span className={`font-medium ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Enable Constant Tone</span>
-                  <button 
-                    onClick={() => setConstantToneConfig(prev => ({...prev, enabled: !prev.enabled}))}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${constantToneConfig.enabled ? 'bg-blue-600' : 'bg-gray-200'}`}
-                    role="switch"
-                    aria-checked={constantToneConfig.enabled}
-                  >
-                    <span 
-                      className={`${constantToneConfig.enabled ? 'translate-x-6' : 'translate-x-1'} inline-block h-4 w-4 transform rounded-full bg-white transition-transform`}
-                    />
-                  </button>
-                </div>
-                
-                <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Oscillator Type</h4>
-                <div className="grid grid-cols-2 gap-2 mb-4">
-                  {(['sine', 'square', 'sawtooth', 'triangle'] as OscillatorType[]).map(type => (
-                    <button 
-                      key={type}
-                      onClick={() => handleOscillatorTypeChange(type)}
-                      className={`p-2 rounded text-sm ${
-                        constantToneConfig.oscillatorType === type 
-                        ? 'bg-blue-600 text-white' 
-                        : isDarkMode 
-                          ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' 
-                          : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-                      }`}
-                      aria-label={`Oscillator type ${type}`}
-                      aria-pressed={constantToneConfig.oscillatorType === type}
-                      disabled={!constantToneConfig.enabled}
-                    >
-                      {type.charAt(0).toUpperCase() + type.slice(1)}
-                    </button>
-                  ))}
-                </div>
-                
-                <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-                  Frequency: {constantToneConfig.frequency} Hz
-                </h4>
-                <input 
-                  type="range" 
-                  min="220" 
-                  max="880" 
-                  step="1"
-                  value={constantToneConfig.frequency}
-                  onChange={(e) => setConstantToneConfig(prev => ({
-                    ...prev,
-                    frequency: Number(e.target.value)
-                  }))}
-                  className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer mb-4`}
-                  aria-label="Frequency"
-                />
-                
-                <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>ADSR Envelope</h4>
-                
-                <div className="mb-3">
-                  <div className="flex justify-between mb-1">
-                    <label className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                      Attack: {constantToneConfig.envelope.attack.toFixed(2)}s
-                    </label>
-                  </div>
-                  <input 
-                    type="range" 
-                    min="0.01" 
-                    max="2" 
-                    step="0.01"
-                    value={constantToneConfig.envelope.attack}
-                    onChange={(e) => handleEnvelopeChange('attack', Number(e.target.value))}
-                    className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
-                    aria-label="Attack"
-                  />
-                </div>
-                
-                <div className="mb-3">
-                  <div className="flex justify-between mb-1">
-                    <label className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                      Decay: {constantToneConfig.envelope.decay.toFixed(2)}s
-                    </label>
-                  </div>
-                  <input 
-                    type="range" 
-                    min="0.01" 
-                    max="2" 
-                    step="0.01"
-                    value={constantToneConfig.envelope.decay}
-                    onChange={(e) => handleEnvelopeChange('decay', Number(e.target.value))}
-                    className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
-                    aria-label="Decay"
-                  />
-                </div>
-                
-                <div className="mb-3">
-                  <div className="flex justify-between mb-1">
-                    <label className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                      Sustain: {constantToneConfig.envelope.sustain.toFixed(2)}
-                    </label>
-                  </div>
-                  <input 
-                    type="range" 
-                    min="0.01" 
-                    max="1" 
-                    step="0.01"
-                    value={constantToneConfig.envelope.sustain}
-                    onChange={(e) => handleEnvelopeChange('sustain', Number(e.target.value))}
-                    className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
-                    aria-label="Sustain"
-                  />
-                </div>
-                
-                <div className="mb-3">
-                  <div className="flex justify-between mb-1">
-                    <label className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                      Release: {constantToneConfig.envelope.release.toFixed(2)}s
-                    </label>
-                  </div>
-                  <input 
-                    type="range" 
-                    min="0.01" 
-                    max="3" 
-                    step="0.01"
-                    value={constantToneConfig.envelope.release}
-                    onChange={(e) => handleEnvelopeChange('release', Number(e.target.value))}
-                    className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
-                    aria-label="Release"
-                  />
-                </div>
+        {/* Common Settings - shown for all modes */}
+        <div className="mb-6">
+          <h3 className="text-xl font-bold text-white dark:text-white text-gray-800 mb-4">Session Settings</h3>
+          
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
+            <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Panning Parameters</h4>
+            
+            <div className="mb-3">
+              <div className="flex justify-between mb-1">
+                <label className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                  Frequency: {Math.round(constantToneConfig.frequency * 60)} BPM
+                </label>
               </div>
+              <input 
+                type="range" 
+                min="6" 
+                max="120" 
+                step="1"
+                value={Math.round(constantToneConfig.frequency * 60)}
+                onChange={(e) => setConstantToneConfig(prev => ({
+                  ...prev,
+                  frequency: Number(e.target.value) / 60
+                }))}
+                className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
+                aria-label="Panning frequency in BPM"
+              />
+              <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mt-1`}>
+                Speed of panning in beats per minute (lower = slower)
+              </p>
             </div>
             
+            {/* Common BPM presets */}
+            <div className="flex flex-wrap gap-2 mt-3 mb-4">
+              {[6, 12, 24, 40, 60, 90].map(bpm => (
+                <button
+                  key={bpm}
+                  onClick={() => setConstantToneConfig(prev => ({
+                    ...prev,
+                    frequency: bpm / 60
+                  }))}
+                  className={`px-2 py-1 text-xs ${
+                    Math.round(constantToneConfig.frequency * 60) === bpm
+                    ? 'bg-blue-600 text-white'
+                    : isDarkMode
+                      ? 'bg-gray-700 hover:bg-gray-600 text-gray-200'
+                      : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                  } rounded`}
+                >
+                  {bpm} BPM
+                </button>
+              ))}
+            </div>
+            
+            <div className="mb-3">
+              <div className="flex justify-between mb-1">
+                <label className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                  Pan Width: {panWidthPercent}%
+                </label>
+              </div>
+              <input 
+                type="range" 
+                min="10" 
+                max="100" 
+                step="5"
+                value={panWidthPercent}
+                onChange={(e) => setPanWidthPercent(Number(e.target.value))}
+                className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
+                aria-label="Pan width percentage"
+              />
+              <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mt-1`}>
+                Percentage of complete left-right panning
+              </p>
+            </div>
+          </div>
+        </div>
+        
+        {/* Synthesizer Mode Settings */}
+        {audioMode === 'synthesizer' && (
+          <>
             {/* Contact Sounds Section */}
             <div className="mb-6">
               <h3 className="text-xl font-bold text-white dark:text-white text-gray-800 mb-4">Contact Sounds</h3>
@@ -1084,445 +1068,207 @@ export function EMDRProcessor() {
                   </button>
                 </div>
                 
-                <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Sound Type</h4>
-                <div className="grid grid-cols-2 gap-2 mb-4">
-                  {(['sine', 'square', 'sawtooth', 'triangle'] as OscillatorType[]).map(type => (
-                    <button 
-                      key={type}
-                      onClick={() => setContactSoundConfig(prev => ({...prev, oscillatorType: type}))}
-                      className={`p-2 rounded text-sm ${
-                        contactSoundConfig.oscillatorType === type 
-                        ? 'bg-blue-600 text-white' 
-                        : isDarkMode 
-                          ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' 
-                          : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-                      }`}
-                      aria-label={`Contact sound type ${type}`}
-                      aria-pressed={contactSoundConfig.oscillatorType === type}
-                    >
-                      {type.charAt(0).toUpperCase() + type.slice(1)}
-                    </button>
-                  ))}
-                </div>
-                
-                <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-                  Left Contact: {contactSoundConfig.leftFrequency} Hz
-                </h4>
-                <input 
-                  type="range" 
-                  min="220" 
-                  max="880" 
-                  step="1"
-                  value={contactSoundConfig.leftFrequency}
-                  onChange={(e) => handleContactFrequencyChange(false, Number(e.target.value))}
-                  className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer mb-4`}
-                  aria-label="Left contact frequency"
-                />
-                
-                <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-                  Right Contact: {contactSoundConfig.rightFrequency} Hz
-                </h4>
-                <input 
-                  type="range" 
-                  min="220" 
-                  max="880" 
-                  step="1"
-                  value={contactSoundConfig.rightFrequency}
-                  onChange={(e) => handleContactFrequencyChange(true, Number(e.target.value))}
-                  className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer mb-4`}
-                  aria-label="Right contact frequency"
-                />
-                
-                <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-                  Duration: {contactSoundConfig.duration.toFixed(2)}s
-                </h4>
-                <input 
-                  type="range" 
-                  min="0.05" 
-                  max="0.5" 
-                  step="0.01"
-                  value={contactSoundConfig.duration}
-                  onChange={(e) => setContactSoundConfig(prev => ({
-                    ...prev,
-                    duration: Number(e.target.value)
-                  }))}
-                  className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer mb-4`}
-                  aria-label="Contact sound duration"
-                />
-                
-                <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-                  Volume: {Math.round(contactSoundConfig.volume * 100)}%
-                </h4>
-                <input 
-                  type="range" 
-                  min="0" 
-                  max="1" 
-                  step="0.01"
-                  value={contactSoundConfig.volume}
-                  onChange={(e) => setContactSoundConfig(prev => ({
-                    ...prev,
-                    volume: Number(e.target.value)
-                  }))}
-                  className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
-                  aria-label="Contact sound volume"
-                />
+                {contactSoundConfig.enabled && (
+                  <>
+                    <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Sound Character</h4>
+                    <div className="grid grid-cols-2 gap-2 mb-4">
+                      <button 
+                        onClick={() => setContactSoundConfig(prev => ({...prev, oscillatorType: 'sine'}))}
+                        className={`p-2 rounded text-sm ${
+                          contactSoundConfig.oscillatorType === 'sine' 
+                          ? 'bg-blue-600 text-white' 
+                          : isDarkMode 
+                            ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' 
+                            : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                        }`}
+                        aria-label="Soft, warm tone"
+                        aria-pressed={contactSoundConfig.oscillatorType === 'sine'}
+                      >
+                        Soft & Warm
+                      </button>
+                      <button 
+                        onClick={() => setContactSoundConfig(prev => ({...prev, oscillatorType: 'triangle'}))}
+                        className={`p-2 rounded text-sm ${
+                          contactSoundConfig.oscillatorType === 'triangle' 
+                          ? 'bg-blue-600 text-white' 
+                          : isDarkMode 
+                            ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' 
+                            : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                        }`}
+                        aria-label="Gentle, clear tone"
+                        aria-pressed={contactSoundConfig.oscillatorType === 'triangle'}
+                      >
+                        Gentle & Clear
+                      </button>
+                      <button 
+                        onClick={() => setContactSoundConfig(prev => ({...prev, oscillatorType: 'square'}))}
+                        className={`p-2 rounded text-sm ${
+                          contactSoundConfig.oscillatorType === 'square' 
+                          ? 'bg-blue-600 text-white' 
+                          : isDarkMode 
+                            ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' 
+                            : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                        }`}
+                        aria-label="Sharp, buzzy tone"
+                        aria-pressed={contactSoundConfig.oscillatorType === 'square'}
+                      >
+                        Sharp & Buzzy
+                      </button>
+                      <button 
+                        onClick={() => setContactSoundConfig(prev => ({...prev, oscillatorType: 'sawtooth'}))}
+                        className={`p-2 rounded text-sm ${
+                          contactSoundConfig.oscillatorType === 'sawtooth' 
+                          ? 'bg-blue-600 text-white' 
+                          : isDarkMode 
+                            ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' 
+                            : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                        }`}
+                        aria-label="Bright, metallic tone"
+                        aria-pressed={contactSoundConfig.oscillatorType === 'sawtooth'}
+                      >
+                        Bright & Metallic
+                      </button>
+                    </div>
+                    
+                    <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                      Left Contact Pitch
+                    </h4>
+                    <div className="flex items-center gap-2 mb-4">
+                      <span className="text-sm text-gray-500">Deep</span>
+                      <input 
+                        type="range" 
+                        min="220" 
+                        max="880" 
+                        step="1"
+                        value={contactSoundConfig.leftFrequency}
+                        onChange={(e) => handleContactFrequencyChange(false, Number(e.target.value))}
+                        className={`flex-grow h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
+                        aria-label="Left contact pitch"
+                      />
+                      <span className="text-sm text-gray-500">High</span>
+                    </div>
+                    
+                    <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                      Right Contact Pitch
+                    </h4>
+                    <div className="flex items-center gap-2 mb-4">
+                      <span className="text-sm text-gray-500">Deep</span>
+                      <input 
+                        type="range" 
+                        min="220" 
+                        max="880" 
+                        step="1"
+                        value={contactSoundConfig.rightFrequency}
+                        onChange={(e) => handleContactFrequencyChange(true, Number(e.target.value))}
+                        className={`flex-grow h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
+                        aria-label="Right contact pitch"
+                      />
+                      <span className="text-sm text-gray-500">High</span>
+                    </div>
+                    
+                    <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                      Sound Length
+                    </h4>
+                    <div className="flex items-center gap-2 mb-4">
+                      <span className="text-sm text-gray-500">Quick</span>
+                      <input 
+                        type="range" 
+                        min="0.05" 
+                        max="0.5" 
+                        step="0.01"
+                        value={contactSoundConfig.duration}
+                        onChange={(e) => setContactSoundConfig(prev => ({
+                          ...prev,
+                          duration: Number(e.target.value)
+                        }))}
+                        className={`flex-grow h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
+                        aria-label="Contact sound length"
+                      />
+                      <span className="text-sm text-gray-500">Long</span>
+                    </div>
+                    
+                    <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                      Volume
+                    </h4>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-gray-500">Soft</span>
+                      <input 
+                        type="range" 
+                        min="0" 
+                        max="1" 
+                        step="0.01"
+                        value={contactSoundConfig.volume}
+                        onChange={(e) => setContactSoundConfig(prev => ({
+                          ...prev,
+                          volume: Number(e.target.value)
+                        }))}
+                        className={`flex-grow h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
+                        aria-label="Contact sound volume"
+                      />
+                      <span className="text-sm text-gray-500">Loud</span>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </>
         )}
         
-        {/* Audio Track Settings - only shown when in audioTrack mode */}
+        {/* Audio Track Settings */}
         {audioMode === 'audioTrack' && (
           <div className="mb-6">
             <h3 className="text-xl font-bold text-white dark:text-white text-gray-800 mb-4">Audio Track</h3>
             
             <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
-              <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Selected File</h4>
-              <div className={`p-3 rounded ${isDarkMode ? 'bg-gray-700' : 'bg-gray-100'} mb-4`}>
-                <p className={`${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
-                  {selectedAudio?.name || 'No audio file selected'}
+              <div className="text-center p-6 border-2 border-dashed rounded-lg border-gray-400 dark:border-gray-600">
+                <h4 className={`font-bold mb-4 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Upload Your Audio</h4>
+                <p className={`text-sm mb-4 ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                  Upload an MP3 file to create a bilateral stimulation track
+                </p>
+                <input 
+                  type="file" 
+                  accept="audio/*"
+                  className={`hidden`}
+                  id="audio-upload"
+                  onChange={(e) => {
+                    // Handle file upload here
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      // Process the file...
+                    }
+                  }}
+                />
+                <label 
+                  htmlFor="audio-upload"
+                  className={`inline-block px-6 py-3 ${
+                    isDarkMode 
+                      ? 'bg-blue-600 hover:bg-blue-500 text-white' 
+                      : 'bg-blue-100 hover:bg-blue-200 text-blue-800'
+                  } rounded-lg cursor-pointer transition-colors duration-200`}
+                >
+                  Choose File
+                </label>
+                <p className={`mt-2 text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                  No file chosen
                 </p>
               </div>
               
-              {/* Audio File Management */}
-              <div className="mb-4">
-                <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Your Audio Files</h4>
-                
-                {/* Upload New Audio */}
-                <div className="mb-4">
-                  <label className={`flex items-center justify-center p-3 border-2 border-dashed ${isDarkMode ? 'border-gray-600 hover:border-gray-500' : 'border-gray-300 hover:border-gray-400'} rounded-lg cursor-pointer transition-colors`}>
-                    <input 
-                      type="file" 
-                      accept="audio/*" 
-                      className="sr-only"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          // Create a unique ID for the file
-                          const newId = generateMD5Hash(file.name + new Date().toISOString());
-                          
-                          // Create an object URL (this would normally save to server in a real app)
-                          const objectUrl = URL.createObjectURL(file);
-                          
-                          // Create new audio file entry
-                          const newAudio: AudioFile = {
-                            id: newId,
-                            name: file.name,
-                            lastUsed: new Date().toLocaleString(),
-                            path: objectUrl
-                          };
-                          
-                          // Add to list and select
-                          setAudioFiles(prev => [...prev, newAudio]);
-                          setSelectedAudio(newAudio);
-                          
-                          // Update audio track config
-                          setAudioTrackConfig(prev => ({
-                            ...prev,
-                            filePath: objectUrl
-                          }));
-                          
-                          // Clear the input value
-                          e.target.value = '';
-                        }
-                      }}
-                    />
-                    <div className="text-center">
-                      <svg xmlns="http://www.w3.org/2000/svg" className={`mx-auto h-8 w-8 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                      </svg>
-                      <span className={`mt-2 block text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                        Upload audio file
-                      </span>
-                    </div>
-                  </label>
-                </div>
-                
-                {/* Audio Files List */}
-                <div className={`rounded-lg overflow-hidden mb-2 ${audioFiles.length === 0 ? 'hidden' : 'block'}`}>
-                  <div className={`max-h-48 overflow-y-auto`}>
-                    {audioFiles.map(file => (
-                      <div 
-                        key={file.id}
-                        className={`flex items-center justify-between p-3 ${
-                          selectedAudio?.id === file.id 
-                            ? 'bg-blue-600 text-white' 
-                            : isDarkMode 
-                              ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' 
-                              : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
-                        } border-b ${isDarkMode ? 'border-gray-600' : 'border-gray-200'} cursor-pointer`}
-                        onClick={() => {
-                          setSelectedAudio(file);
-                          // Update audio track config with the file path
-                          setAudioTrackConfig(prev => ({
-                            ...prev,
-                            filePath: file.path || '/audio/sine-440hz.mp3'
-                          }));
-                        }}
-                      >
-                        <div className="flex items-center overflow-hidden">
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-                          </svg>
-                          <span className="truncate">{file.name}</span>
-                        </div>
-                        <button 
-                          className={`ml-2 p-1 rounded-full ${
-                            selectedAudio?.id === file.id 
-                              ? 'hover:bg-blue-700' 
-                              : isDarkMode 
-                                ? 'hover:bg-gray-500' 
-                                : 'hover:bg-gray-300'
-                          }`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteAudioFile(file.id, e as React.MouseEvent);
-                            
-                            // If the deleted file was selected for the audio track, reset
-                            if (selectedAudio?.id === file.id) {
-                              // Find another file to use as default, or use the built-in sine wave
-                              const nextFile = audioFiles.find(f => f.id !== file.id);
-                              if (nextFile) {
-                                setAudioTrackConfig(prev => ({
-                                  ...prev,
-                                  filePath: nextFile.path || '/audio/sine-440hz.mp3'
-                                }));
-                              } else {
-                                setAudioTrackConfig(prev => ({
-                                  ...prev,
-                                  filePath: '/audio/sine-440hz.mp3'
-                                }));
-                              }
-                            }
-                          }}
-                          aria-label={`Delete ${file.name}`}
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                
-                {audioFiles.length === 0 && (
-                  <div className={`p-4 text-center rounded-lg ${isDarkMode ? 'bg-gray-700 text-gray-400' : 'bg-gray-100 text-gray-600'} italic`}>
-                    No audio files yet. Upload your first file!
-                  </div>
-                )}
-              </div>
-              
-              {/* Audio Playback Controls */}
-              <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Playback Settings</h4>
-              
-              <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Loop Audio</h4>
-              <div className="flex items-center justify-between mb-4">
-                <span className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>Repeat track when finished</span>
-                <button 
-                  onClick={() => setAudioTrackConfig(prev => ({...prev, loop: !prev.loop}))}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${audioTrackConfig.loop ? 'bg-blue-600' : 'bg-gray-200'}`}
-                  role="switch"
-                  aria-checked={audioTrackConfig.loop}
-                >
-                  <span 
-                    className={`${audioTrackConfig.loop ? 'translate-x-6' : 'translate-x-1'} inline-block h-4 w-4 transform rounded-full bg-white transition-transform`}
-                  />
-                </button>
-              </div>
-              
-              <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-                Volume: {Math.round(audioTrackConfig.volume * 100)}%
-              </h4>
-              <input 
-                type="range" 
-                min="0" 
-                max="1" 
-                step="0.01"
-                value={audioTrackConfig.volume}
-                onChange={(e) => setAudioTrackConfig(prev => ({
-                  ...prev,
-                  volume: Number(e.target.value)
-                }))}
-                className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer mb-4`}
-                aria-label="Audio track volume"
-              />
-              
-              {/* Test/preview button */}
-              <button
-                className={`w-full ${
-                  isDarkMode 
-                    ? 'bg-blue-600 hover:bg-blue-500 text-white' 
-                    : 'bg-blue-500 hover:bg-blue-400 text-white'
-                } py-2 px-4 rounded-lg flex items-center justify-center`}
-                onClick={() => {
-                  // Preview the audio without starting the animation
-                  if (audioPlayerRef.current) {
-                    audioPlayerRef.current.src = audioTrackConfig.filePath;
-                    audioPlayerRef.current.volume = audioTrackConfig.volume;
-                    audioPlayerRef.current.loop = false; // Just a preview
-                    
-                    // Play a short preview
-                    audioPlayerRef.current.currentTime = 0;
-                    audioPlayerRef.current.play()
-                      .then(() => {
-                        // Set a timeout to stop after 5 seconds
-                        setTimeout(() => {
-                          if (audioPlayerRef.current && !isPlaying) {
-                            audioPlayerRef.current.pause();
-                          }
-                        }, 5000);
-                      })
-                      .catch(err => console.error("Preview error:", err));
-                  }
-                }}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Preview (5s)
-              </button>
-            </div>
-          </div>
-        )}
-        
-        {/* Only show audio selection section in Audio Track mode */}
-        {audioMode !== 'audioTrack' && (
-          <div className="mb-6">
-            <h3 className="text-xl font-bold text-white dark:text-white text-gray-800 mb-4">Audio Selection</h3>
-            
-            {/* Upload Audio */}
-            <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
-              <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Upload Your Audio</h4>
-              <input 
-                type="file" 
-                accept="audio/*"
-                className={`w-full text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-500'} file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold ${isDarkMode ? 'file:bg-blue-900 file:text-blue-200' : 'file:bg-blue-50 file:text-blue-700'} ${isDarkMode ? 'hover:file:bg-blue-800' : 'hover:file:bg-blue-100'}`}
-              />
-              
               <button 
-                className={`w-full mt-3 ${isDarkMode ? 'bg-blue-900 hover:bg-blue-800 text-blue-200' : 'bg-blue-100 hover:bg-blue-200 text-blue-800'} py-2 px-4 rounded flex items-center justify-center`}
+                className={`w-full mt-4 ${
+                  isDarkMode 
+                    ? 'bg-blue-900 hover:bg-blue-800 text-blue-200' 
+                    : 'bg-blue-100 hover:bg-blue-200 text-blue-800'
+                } py-3 px-4 rounded-lg flex items-center justify-center transition-colors duration-200`}
                 onClick={() => {}}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2">
                   <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
                 </svg>
-                Show Your Song Library ({audioFiles.length})
+                Your Song Library ({audioFiles.length})
               </button>
-            </div>
-            
-            {/* Sample Audio */}
-            <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
-              <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Sample Audio</h4>
-              <div className="grid grid-cols-2 gap-2">
-                <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-3 rounded text-sm text-left ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                  White noise for focus and relaxation
-                </button>
-                <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-3 rounded text-sm text-left ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                  Clean 440Hz sine wave tone
-                </button>
-                <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-3 rounded text-sm text-left ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                  Deeper 220Hz sine wave tone
-                </button>
-                <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-3 rounded text-sm text-left ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                  Soft triangle wave for gentle stimulation
-                </button>
-                <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-3 rounded text-sm text-left ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                  Gentle pink noise for relaxation
-                </button>
-              </div>
             </div>
           </div>
         )}
-        
-        {/* Session Controls */}
-        <div className="mb-6">
-          <h3 className="text-xl font-bold text-white dark:text-white text-gray-800 mb-4">Session Controls</h3>
-          
-          {/* Session Timing */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
-            <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Session Timing</h4>
-            
-            <div className="mb-4">
-              <div className="flex justify-between mb-1">
-                <label className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>Start Time: 0:00</label>
-              </div>
-              <input 
-                type="range" 
-                min="0" 
-                max="100" 
-                className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
-              />
-              <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mt-1`}>Position in the audio to start playback</p>
-            </div>
-            
-            <div className="mb-4">
-              <div className="flex justify-between mb-1">
-                <label className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>Session Duration: 1:00</label>
-              </div>
-              <input 
-                type="range" 
-                min="0" 
-                max="100" 
-                className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
-              />
-              <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mt-1`}>How long the session should last before fading out</p>
-            </div>
-            
-            <div className="grid grid-cols-5 gap-2">
-              <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-2 rounded text-xs ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>1:00</button>
-              <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-2 rounded text-xs ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>3:00</button>
-              <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-2 rounded text-xs ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>5:00</button>
-              <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-2 rounded text-xs ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>10:00</button>
-              <button className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} p-2 rounded text-xs ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>Full</button>
-            </div>
-          </div>
-          
-          {/* Pan Settings */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
-            <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Current Pan: {(panValue + 1)/2 * 100}% (Audio API: {panValue.toFixed(2)})</h4>
-            <div className="flex items-center mb-1">
-              <span className={`text-xs ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>L</span>
-              <input 
-                type="range" 
-                min="-100" 
-                max="100" 
-                value={panValue * 100}
-                onChange={(e) => setPanValue(Number(e.target.value) / 100)}
-                className={`flex-1 mx-2 h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
-              />
-              <span className={`text-xs ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>R</span>
-            </div>
-            <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mt-1`}>Manual control overrides sine wave while adjusting</p>
-          </div>
-          
-          {/* Volume Control */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
-            <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Volume: 70%</h4>
-            <input 
-              type="range" 
-              min="0" 
-              max="100" 
-              className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
-            />
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-4 mb-8">
-          <Link href="/" passHref className="w-full">
-            <button className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xl font-bold py-3 px-6 rounded">
-              Simple Panner
-            </button>
-          </Link>
-          
-          <Link href="/beat-sync" passHref className="w-full">
-            <button className="w-full bg-purple-600 hover:bg-purple-500 text-white text-xl font-bold py-3 px-6 rounded relative group">
-              Beat-Sync Panner
-              <span className="absolute top-0 right-0 -mt-2 -mr-2 bg-yellow-400 text-black text-xs px-2 py-1 rounded-full font-bold transform group-hover:scale-110 transition-transform">NEW</span>
-            </button>
-          </Link>
-        </div>
       </div>
 
       {/* Main Content with Canvas */}
@@ -1545,7 +1291,24 @@ export function EMDRProcessor() {
       
       {/* Minimalist Audio Player Controls */}
       <div className={`fixed bottom-6 left-1/2 transform -translate-x-1/2 ${isDarkMode ? 'bg-gray-800' : 'bg-gray-200'} bg-opacity-80 p-4 rounded-full shadow-lg z-10`}>
-        {selectedAudio ? (
+        {audioMode === 'synthesizer' ? (
+          <button
+            onClick={togglePlayPause}
+            className="bg-blue-600 hover:bg-blue-500 text-white rounded-full p-4 flex items-center justify-center"
+            aria-label={isPlaying ? "Pause" : "Play"}
+          >
+            {isPlaying ? (
+              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="6" y="4" width="4" height="16"></rect>
+                <rect x="14" y="4" width="4" height="16"></rect>
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+              </svg>
+            )}
+          </button>
+        ) : selectedAudio ? (
           <div className="flex items-center gap-4">
             <button
               onClick={togglePlayPause}

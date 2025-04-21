@@ -399,12 +399,16 @@ export class AudioEngine {
       const currentTime = this.audioElement.currentTime;
       this.stopAudioTrack();
       this.audioElement.src = newConfig.filePath;
-      this.startAudioTrack().then(() => {
-        if (this.audioElement) {
-          // Try to restore position
-          this.audioElement.currentTime = currentTime;
-        }
-      });
+      this.startAudioTrack();
+      
+      // Try to restore position after a short delay to ensure track has loaded
+      if (this.audioElement) {
+        setTimeout(() => {
+          if (this.audioElement) {
+            this.audioElement.currentTime = currentTime;
+          }
+        }, 100);
+      }
     }
     
     // Update loop setting even if not playing

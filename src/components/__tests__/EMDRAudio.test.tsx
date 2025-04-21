@@ -190,6 +190,10 @@ describe('EMDR Audio System', () => {
       const menuButton = await screen.findByLabelText(/Toggle menu/i);
       fireEvent.click(menuButton);
       
+      // Set audio mode to synthesizer
+      const synthesizerButton = await screen.findByText(/Synthesizer/i);
+      fireEvent.click(synthesizerButton);
+      
       // Check for separate sections
       const constantToneSection = await screen.findByText(/Constant Tone/i);
       const contactSoundSection = await screen.findByText(/Contact Sounds/i);
@@ -204,6 +208,10 @@ describe('EMDR Audio System', () => {
       // Open menu
       const menuButton = await screen.findByLabelText(/Toggle menu/i);
       fireEvent.click(menuButton);
+      
+      // Set audio mode to synthesizer
+      const synthesizerButton = await screen.findByText(/Synthesizer/i);
+      fireEvent.click(synthesizerButton);
       
       // Check for contact sound controls
       const leftContactControl = await screen.findByLabelText(/Left contact frequency/i);
@@ -220,8 +228,12 @@ describe('EMDR Audio System', () => {
       const menuButton = await screen.findByLabelText(/Toggle menu/i);
       fireEvent.click(menuButton);
       
+      // Set audio mode to synthesizer
+      const synthesizerButton = await screen.findByText(/Synthesizer/i);
+      fireEvent.click(synthesizerButton);
+      
       // Check for oscillator type controls
-      const oscillatorTypeControl = await screen.findByLabelText(/Oscillator type/i);
+      const oscillatorTypeControl = await screen.findByLabelText(/Oscillator type sine/i);
       expect(oscillatorTypeControl).toBeInTheDocument();
       
       // Check for ADSR controls

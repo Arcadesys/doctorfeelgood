@@ -82,6 +82,15 @@ export class AudioEngine {
         }
         
         try {
+          // Disconnect any existing connections first
+          try {
+            const existingSource = this.context.createMediaElementSource(audioElement);
+            existingSource.disconnect();
+          } catch (err) {
+            // Ignore errors here as they likely mean no existing connection
+          }
+          
+          // Now create our new connection
           this.audioTrackNode = this.context.createMediaElementSource(audioElement);
           this.audioTrackNode.connect(this.gainNode);
           this.audioElementConnected = true;
@@ -180,6 +189,16 @@ export class AudioEngine {
   public dispose(): void {
     this.stopAll();
     
+    // Disconnect audio track node if it exists
+    if (this.audioTrackNode) {
+      try {
+        this.audioTrackNode.disconnect();
+      } catch (err) {
+        console.warn('Error disconnecting audio track node:', err);
+      }
+      this.audioTrackNode = null;
+    }
+    
     if (this.context) {
       this.context.close();
       this.context = null;
@@ -187,7 +206,8 @@ export class AudioEngine {
     
     this.gainNode = null;
     this.pannerNode = null;
-    this.audioTrackNode = null;
+    this.audioElement = null;
+    this.audioElementConnected = false;
     this.leftClickBuffer = null;
     this.rightClickBuffer = null;
   }

@@ -360,6 +360,11 @@ export function EMDRProcessor() {
       return;
     }
     
+    // Skip audio connection if we're using the AudioEngine
+    if (audioEngineRef.current) {
+      return;
+    }
+
     const connectAudioToContext = async () => {
       try {
         const audioElement = audioPlayerRef.current;
@@ -367,22 +372,6 @@ export function EMDRProcessor() {
         
         if (!audioElement || !audioContext) {
           throw new Error('Audio element or context not available');
-        }
-
-        // Wait for the audio to be loaded
-        if (audioElement.readyState < 2) { // HAVE_CURRENT_DATA
-          await new Promise<void>((resolve, reject) => {
-            const handleCanPlay = () => {
-              audioElement.removeEventListener('canplay', handleCanPlay);
-              resolve();
-            };
-            const handleError = (e: Event) => {
-              audioElement.removeEventListener('error', handleError);
-              reject(new Error('Audio failed to load'));
-            };
-            audioElement.addEventListener('canplay', handleCanPlay);
-            audioElement.addEventListener('error', handleError);
-          });
         }
 
         // Check if we already have a source node

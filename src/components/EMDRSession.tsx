@@ -31,6 +31,8 @@ const EMDRSession: React.FC<EMDRSessionProps> = ({
   const [targetSize, setTargetSize] = useState(50); // default size in pixels
   const [sessionDuration, setSessionDuration] = useState(5); // default 5 minutes
   const [useConstantPanning, setUseConstantPanning] = useState(true); // Toggle for panning vs ping-pong
+  const [targetColor, setTargetColor] = useState('#ff0000'); // default red
+  const [backgroundColor, setBackgroundColor] = useState('#ffffff'); // default white
   
   // UI state
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -127,6 +129,12 @@ const EMDRSession: React.FC<EMDRSessionProps> = ({
       case 'sessionDuration':
         setSessionDuration(value as number);
         break;
+      case 'targetColor':
+        setTargetColor(value as string);
+        break;
+      case 'backgroundColor':
+        setBackgroundColor(value as string);
+        break;
     }
   }, []);
   
@@ -144,6 +152,8 @@ const EMDRSession: React.FC<EMDRSessionProps> = ({
     setTargetSize(preset.targetSize);
     setVisualIntensity(preset.visualIntensity);
     setSessionDuration(preset.sessionDuration);
+    setTargetColor(preset.targetColor);
+    setBackgroundColor(preset.backgroundColor);
     
     // Handle oscillatorType if it exists in the preset
     if ('oscillatorType' in preset) {
@@ -162,6 +172,8 @@ const EMDRSession: React.FC<EMDRSessionProps> = ({
     visualIntensity,
     sessionDuration,
     oscillatorType,
+    targetColor,
+    backgroundColor,
   };
 
   return (
@@ -180,13 +192,13 @@ const EMDRSession: React.FC<EMDRSessionProps> = ({
         </button>
       </div>
       
-      <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
+      <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md" style={{ backgroundColor: backgroundColor }}>
         <div className="mb-6">
           <EMDRTarget 
             isActive={isActive} 
             speed={speed} 
             size={targetSize} 
-            color="#ff0000" 
+            color={targetColor}
             intensity={visualIntensity}
           />
         </div>

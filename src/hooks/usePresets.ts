@@ -10,6 +10,8 @@ export interface EMDRPreset {
   visualIntensity: number;
   sessionDuration: number;
   oscillatorType?: 'sine' | 'square' | 'triangle' | 'sawtooth';
+  targetColor: string;
+  backgroundColor: string;
 }
 
 export type PresetSaveCallback = (preset: Omit<EMDRPreset, 'id'>) => void;
@@ -25,6 +27,8 @@ const DEFAULT_PRESETS: EMDRPreset[] = [
     visualIntensity: 0.6,
     sessionDuration: 5,
     oscillatorType: 'sine',
+    targetColor: '#000000',
+    backgroundColor: '#ffffff',
   },
   {
     id: 'default-medium',
@@ -36,6 +40,8 @@ const DEFAULT_PRESETS: EMDRPreset[] = [
     visualIntensity: 0.8,
     sessionDuration: 10,
     oscillatorType: 'triangle',
+    targetColor: '#000000',
+    backgroundColor: '#ffffff',
   },
   {
     id: 'default-fast',
@@ -47,6 +53,8 @@ const DEFAULT_PRESETS: EMDRPreset[] = [
     visualIntensity: 1.0,
     sessionDuration: 15,
     oscillatorType: 'sawtooth',
+    targetColor: '#000000',
+    backgroundColor: '#ffffff',
   },
 ];
 

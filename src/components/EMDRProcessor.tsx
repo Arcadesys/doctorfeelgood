@@ -60,9 +60,6 @@ export default function EMDRProcessor() {
   });
 
   const [audioFiles, setAudioFiles] = useState<AudioFile[]>([]);
-  const [showLibrary, setShowLibrary] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   
   // Audio engine settings
   const [contactSoundConfig] = useState<ContactSoundConfig>({

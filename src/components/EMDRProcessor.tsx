@@ -91,7 +91,6 @@ export function EMDRProcessor() {
   const [targetColor, setTargetColor] = useState('#ff0000'); // Default red
   const [targetShape, setTargetShape] = useState<'circle' | 'square'>('circle');
   const [targetHasGlow, setTargetHasGlow] = useState(true);
-  const [visualIntensity, setVisualIntensity] = useState(0.8); // Default 80%
   const [targetMovementPattern, setTargetMovementPattern] = useState<'ping-pong' | 'sine'>('ping-pong');
   
   // Draw visual target helper function
@@ -534,112 +533,6 @@ export function EMDRProcessor() {
     };
   }, [isMenuOpen]);
   
-  // Select folder path (this would normally open a native file picker)
-  const selectMusicFolder = () => {
-    // In a real app, this would show a native folder picker dialog
-    // and store the selected path
-    const mockPath = prompt('Enter your music folder path:', folderPath || '/Users/Music');
-    
-    if (mockPath) {
-      setFolderPath(mockPath);
-      localStorage.setItem('folderPath', mockPath);
-      
-      // This would normally trigger a scan of the directory
-      // In this mock implementation, we'll just add a sample file
-      if (!audioFiles.some(file => file.id === '2')) {
-        const newFile = {
-          id: '2',
-          name: 'Sample Song.mp3',
-          lastUsed: new Date().toLocaleString(),
-          path: `${mockPath}/Sample Song.mp3`
-        };
-        
-        setAudioFiles(prev => [...prev, newFile]);
-      }
-    }
-  };
-  
-  // Handle audio file selection 
-  const selectAudioFile = (file: AudioFile) => {
-    setSelectedAudio(file);
-    
-    // Update lastUsed date
-    const updatedFiles = audioFiles.map(f => {
-      if (f.id === file.id) {
-        return { ...f, lastUsed: new Date().toLocaleString() };
-      }
-      return f;
-    });
-    
-    setAudioFiles(updatedFiles);
-    
-    // If in development mode using our default file, use the direct path
-    if (process.env.NODE_ENV === 'development' && file.name === 'Sine Wave 440Hz') {
-      // To ensure audio reloads when selected repeatedly
-      if (audioPlayerRef.current) {
-        console.log('Selecting Sine Wave 440Hz for playback');
-        audioPlayerRef.current.pause();
-        audioPlayerRef.current.onloadstart = () => console.log('Audio loading started');
-        audioPlayerRef.current.onloadeddata = () => console.log('Audio data loaded');
-        audioPlayerRef.current.oncanplay = () => console.log('Audio can play');
-        audioPlayerRef.current.onerror = (e) => {
-          const error = audioPlayerRef.current?.error;
-          console.error('Audio loading error:', {
-            code: error?.code,
-            message: error?.message,
-            details: error
-          });
-        };
-        
-        // Create and append a new source element to guarantee reload
-        const sourceElement = document.createElement('source');
-        sourceElement.src = '/audio/sine-440hz.mp3';
-        sourceElement.type = 'audio/mpeg';
-        
-        // Clear existing source elements
-        while (audioPlayerRef.current.firstChild) {
-          audioPlayerRef.current.removeChild(audioPlayerRef.current.firstChild);
-        }
-        
-        // Add the new source element
-        audioPlayerRef.current.appendChild(sourceElement);
-        audioPlayerRef.current.load();
-      }
-      return;
-    }
-    
-    // Play the audio file
-    if (audioPlayerRef.current) {
-      // For all files, use the placeholder if not in development with default file
-      const sourceElement = document.createElement('source');
-      sourceElement.src = '/sounds/menu-open.mp3';
-      sourceElement.type = 'audio/mpeg';
-      
-      // Clear existing source elements
-      while (audioPlayerRef.current.firstChild) {
-        audioPlayerRef.current.removeChild(audioPlayerRef.current.firstChild);
-      }
-      
-      // Add the new source element
-      audioPlayerRef.current.appendChild(sourceElement);
-      
-      console.log(`Playing audio: ${sourceElement.src}`);
-      audioPlayerRef.current.load();
-      audioPlayerRef.current.play()
-        .then(() => {
-          setIsPlaying(true);
-          console.log('Playback started successfully');
-        })
-        .catch(error => {
-          console.error("Error playing audio:", error);
-          // Try loading without autoplay
-          if (audioPlayerRef.current) {
-            audioPlayerRef.current.load();
-          }
-        });
-    }
-  };
-  
   // Animation control functions
   const startAnimation = useCallback(() => {
     if (animationFrameId) return;
@@ -872,86 +765,26 @@ export function EMDRProcessor() {
 
   // Function to handle audio loading errors
   const handleAudioError = (errorMessage: string) => {
-    setError(errorMessage);
-    setIsLoading(false);
-    
-    // Show error message for screen readers
-    setA11yMessage(`Error: ${errorMessage}`);
-    
-    // Clear error after 5 seconds
-    setTimeout(() => {
-      setError(null);
-    }, 5000);
+    console.error('Audio error:', errorMessage);
+    setA11yMessage(`Audio error: ${errorMessage}`);
   };
-  
-  // Update file upload handler
+
   const handleFileUpload = async (file: File) => {
     try {
-      setIsLoading(true);
-      setError(null);
-      
-      // Create object URL for the audio
-      const objectUrl = URL.createObjectURL(file);
-      
-      // Create new audio file entry
-      const newAudioFile: AudioFile = {
-        id: `file-${Date.now()}`,
+      const fileId = generateMD5Hash(file.name);
+      const newFile: AudioFile = {
+        id: fileId,
         name: file.name,
-        lastUsed: new Date().toLocaleString(),
-        path: objectUrl,
-        objectUrl: objectUrl
+        lastUsed: new Date().toISOString(),
+        objectUrl: URL.createObjectURL(file)
       };
       
-      // Set up audio player and wait for it to load
-      if (audioPlayerRef.current) {
-        return new Promise<void>((resolve, reject) => {
-          if (!audioPlayerRef.current) return reject('Audio player not initialized');
-          
-          audioPlayerRef.current.onloadeddata = () => {
-            console.log('Audio data loaded');
-            resolve();
-          };
-          
-          audioPlayerRef.current.onerror = () => {
-            const error = audioPlayerRef.current?.error;
-            reject(error?.message || 'Failed to load audio file');
-          };
-          
-          audioPlayerRef.current.src = objectUrl;
-          audioPlayerRef.current.load();
-        })
-        .then(() => {
-          // Update audio files list
-          setAudioFiles(prev => [...prev, newAudioFile]);
-          setSelectedAudio(newAudioFile);
-          
-          // Update audio track config
-          setAudioTrackConfig(prev => ({
-            ...prev,
-            filePath: objectUrl
-          }));
-          
-          // Show success message for screen readers
-          setA11yMessage(`File ${file.name} uploaded successfully`);
-          setIsLoading(false);
-        })
-        .catch(error => {
-          handleAudioError(error.toString());
-          URL.revokeObjectURL(objectUrl);
-        });
-      }
+      setAudioFiles(prev => [...prev, newFile]);
+      setSelectedAudio(newFile);
+      setA11yMessage(`Loaded audio file: ${file.name}`);
     } catch (error) {
-      handleAudioError(error instanceof Error ? error.message : 'Failed to process audio file');
+      handleAudioError('Failed to load audio file');
     }
-  };
-  
-  // Update the file input handler
-  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-    
-    const file = files[0];
-    handleFileUpload(file);
   };
 
   // Current settings for the unified settings component
@@ -976,25 +809,6 @@ export function EMDRProcessor() {
   // Handle setting changes
   const handleSettingChange = (settingName: string, value: number | string | boolean) => {
     switch (settingName) {
-      case 'isDarkMode':
-        setIsDarkMode(value as boolean);
-        break;
-      case 'audioMode':
-        setAudioMode(value as 'click' | 'track');
-        if (audioEngineRef.current) {
-          audioEngineRef.current.setAudioMode(value as 'click' | 'track');
-        }
-        break;
-      case 'bpm':
-        setBpm(value as number);
-        break;
-      case 'panWidthPercent':
-        setPanWidthPercent(value as number);
-        break;
-      case 'sessionDuration':
-        setSessionDuration(value as number);
-        setTimeRemaining((value as number) * 60);
-        break;
       case 'targetSize':
         setTargetSize(value as number);
         drawVisualTarget(); // Redraw with new size
@@ -1011,13 +825,17 @@ export function EMDRProcessor() {
         setTargetHasGlow(value as boolean);
         drawVisualTarget(); // Redraw with updated glow effect
         break;
-      case 'visualIntensity':
-        setVisualIntensity(value as number);
-        drawVisualTarget(); // Redraw with new intensity
-        break;
       case 'targetMovementPattern':
         setTargetMovementPattern(value as 'ping-pong' | 'sine');
-        // Pattern will be applied on next animation frame
+        break;
+      case 'audioMode':
+        setAudioMode(value as AudioMode);
+        break;
+      case 'panWidthPercent':
+        setPanWidthPercent(value as number);
+        break;
+      case 'isDarkMode':
+        setIsDarkMode(value as boolean);
         break;
     }
   };

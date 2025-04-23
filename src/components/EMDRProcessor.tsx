@@ -478,12 +478,25 @@ export default function EMDRProcessor() {
     }
   }, [isPlaying, audioTrackConfig.bpm, targetMovementPattern, drawTarget]);
 
+  // Animation control functions
+  const startAnimation = useCallback(() => {
+    if (animationFrameId) return;
+    animationIdRef.current = requestAnimationFrame(animate);
+  }, [animate, animationFrameId]);
+
+  const stopAnimation = useCallback(() => {
+    if (animationFrameId) {
+      cancelAnimationFrame(animationFrameId);
+      setAnimationFrameId(null);
+    }
+  }, [animationFrameId]);
+
   // Animation effect
   useEffect(() => {
     if (isPlaying && canvasRef.current) {
       canvasRef.current.width = window.innerWidth;
       canvasRef.current.height = window.innerHeight;
-      animationIdRef.current = requestAnimationFrame(animate);
+      startAnimation();
     } else if (animationIdRef.current) {
       cancelAnimationFrame(animationIdRef.current);
       animationIdRef.current = null;
@@ -507,7 +520,7 @@ export default function EMDRProcessor() {
         animationIdRef.current = null;
       }
     };
-  }, [isPlaying, animate, drawTarget]);
+  }, [isPlaying, startAnimation, drawTarget]);
   
   // Handle menu open/close with sound effects
   const toggleMenu = () => {
@@ -536,40 +549,6 @@ export default function EMDRProcessor() {
     };
   }, [isMenuOpen]);
   
-  // Animation control functions
-  const startAnimation = useCallback(() => {
-    if (animationFrameId) return;
-    
-    const animate = () => {
-      if (!canvasRef.current) return;
-      
-      const ctx = canvasRef.current.getContext('2d');
-      if (!ctx) return;
-      
-      ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-      
-      // Update pan value
-      const newPanValue = Math.sin(Date.now() / 1000) * panWidthPercent / 100;
-      setPanValue(newPanValue);
-      
-      // Draw target
-      drawTarget(ctx, canvasRef.current.width / 2, canvasRef.current.height / 2);
-      
-      // Request next frame
-      const frameId = requestAnimationFrame(animate);
-      setAnimationFrameId(frameId);
-    };
-    
-    animate();
-  }, [panWidthPercent, drawTarget, animationFrameId]);
-
-  const stopAnimation = useCallback(() => {
-    if (animationFrameId) {
-      cancelAnimationFrame(animationFrameId);
-      setAnimationFrameId(null);
-    }
-  }, [animationFrameId]);
-
   // Handle timer countdown
   useEffect(() => {
     if (isPlaying && timeRemaining === null) {

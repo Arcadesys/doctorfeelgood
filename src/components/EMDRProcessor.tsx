@@ -10,7 +10,8 @@ import {
 } from '../lib/audioEngine';
 import { useRouter } from 'next/navigation';
 import CustomKnob from './CustomKnob';
-import SettingsDrawer from './SettingsDrawer';
+import { SettingsDrawer } from './SettingsDrawer';
+import { EMDRSettings } from '../types/settings';
 
 // Simple version without the File System Access API
 type AudioFile = {
@@ -46,6 +47,7 @@ export function EMDRProcessor() {
   const [showLibrary, setShowLibrary] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   
   // Audio engine settings
   const [contactSoundConfig, setContactSoundConfig] = useState<ContactSoundConfig>({
@@ -95,22 +97,25 @@ export function EMDRProcessor() {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   
   // Settings state
-  const [settings, setSettings] = useState({
+  const [settings, setSettings] = useState<EMDRSettings>({
     speed: 60,
-    freqLeft: 440,
-    freqRight: 440,
-    targetSize: 50,
-    visualIntensity: 0.8,
     sessionDuration: 30,
-    oscillatorType: 'sine' as const,
+    audioMode: false,
+    volume: 0.5,
+    targetSize: 5,
     targetColor: '#ffffff',
     backgroundColor: '#1a1a1a',
-    audioMode: false,
-    volume: 0.5
   });
   
   // Add reduced motion support
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  
+  // Add debounce refs
+  const volumeDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  const modeDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Add error display timeout
+  const errorTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   // Initialize canvas when component mounts
   useEffect(() => {
@@ -152,12 +157,21 @@ export function EMDRProcessor() {
             audioEngine.setVolume(audioTrackConfig.volume);
           } else {
             console.error('EMDRProcessor: Failed to initialize AudioEngine');
+            setError('Failed to initialize audio');
+            setErrorMessage('Failed to initialize audio');
+            setA11yMessage('Failed to initialize audio');
           }
         } catch (error) {
           console.error('EMDRProcessor: Error initializing AudioEngine:', error);
+          setError('Failed to initialize audio');
+          setErrorMessage('Failed to initialize audio');
+          setA11yMessage('Failed to initialize audio');
         }
       } else {
         console.warn('EMDRProcessor: No audio element available for initialization');
+        setError('No audio element available');
+        setErrorMessage('No audio element available');
+        setA11yMessage('No audio element available');
       }
     })();
     
@@ -187,17 +201,24 @@ export function EMDRProcessor() {
   // Sync audio mode when it changes
   useEffect(() => {
     if (audioEngineRef.current && audioEngineRef.current.getAudioMode() !== audioMode) {
-      // Stop any current playback
-      if (isPlaying) {
-        audioEngineRef.current.stopAll();
-        setIsPlaying(false);
+      try {
+        // Stop any current playback
+        if (isPlaying) {
+          audioEngineRef.current.stopAll();
+          setIsPlaying(false);
+        }
+        
+        // Set new mode
+        audioEngineRef.current.setAudioMode(audioMode);
+        
+        // Update accessibility message
+        setA11yMessage(`Audio mode changed to ${audioMode === 'audioTrack' ? 'audio track' : 'click'}`);
+      } catch (error) {
+        console.error('EMDRProcessor: Error switching audio mode:', error);
+        setError('Failed to switch audio mode');
+        setErrorMessage('Failed to switch audio mode');
+        setA11yMessage('Failed to switch audio mode');
       }
-      
-      // Set new mode
-      audioEngineRef.current.setAudioMode(audioMode);
-      
-      // Update accessibility message
-      setA11yMessage(`Audio mode changed to ${audioMode === 'audioTrack' ? 'audio track' : 'click'}`);
     }
   }, [audioMode, isPlaying]);
   
@@ -600,14 +621,54 @@ export function EMDRProcessor() {
     };
   }, [isPlaying, isDarkMode, bpm, panWidthPercent]); // Add bpm and panWidthPercent to dependencies
   
-  // Handle menu open/close with sound effects
-  const toggleMenu = () => {
-    if (!isMenuOpen) {
-      menuOpenSoundRef.current?.play();
-    } else {
-      menuCloseSoundRef.current?.play();
+  // Handle setting changes with debouncing
+  const handleSettingChange = async (settingName: string, value: number | string | boolean) => {
+    if (!audioEngineRef.current) return;
+
+    try {
+      switch (settingName) {
+        case 'audioMode':
+          const newMode = value ? 'audioTrack' : 'click';
+          await audioEngineRef.current.setAudioMode(newMode);
+          setAudioMode(newMode);
+          setA11yMessage(`Audio mode changed to ${newMode === 'audioTrack' ? 'audio track' : 'click'}`);
+          break;
+        case 'volume':
+          const volumeValue = typeof value === 'number' ? value : parseFloat(value as string);
+          if (volumeDebounceRef.current) {
+            clearTimeout(volumeDebounceRef.current);
+          }
+          volumeDebounceRef.current = setTimeout(() => {
+            audioEngineRef.current?.setVolume(volumeValue);
+            setA11yMessage(`Volume changed to ${Math.round(volumeValue * 100)}%`);
+          }, 100);
+          break;
+        // ... existing code ...
+      }
+    } catch (error) {
+      console.error('EMDRProcessor: Error changing setting:', error);
+      if (settingName === 'audioMode') {
+        setError('Failed to switch audio mode');
+        setErrorMessage('Failed to switch audio mode');
+        setA11yMessage('Failed to switch audio mode');
+      }
     }
+  };
+
+  // Toggle menu with focus management
+  const toggleMenu = () => {
     setIsMenuOpen(!isMenuOpen);
+    if (!isMenuOpen) {
+      // When opening menu, focus will be managed by SettingsDrawer
+      setA11yMessage('Settings menu opened');
+    } else {
+      // When closing menu, return focus to the open settings button
+      setA11yMessage('Settings menu closed');
+      const openSettingsButton = document.querySelector('[aria-label="Open settings"]') as HTMLButtonElement;
+      if (openSettingsButton) {
+        openSettingsButton.focus();
+      }
+    }
   };
 
   // Close menu when clicking outside
@@ -807,95 +868,6 @@ export function EMDRProcessor() {
     };
   }, [timeRemaining, isPlaying, sessionDuration]);
 
-  // Handle settings changes
-  const handleSettingChange = async (settingName: string, value: number | string | boolean) => {
-    setSettings(prev => ({
-      ...prev,
-      [settingName]: value
-    }));
-
-    try {
-      switch (settingName) {
-        case 'audioMode':
-          await audioEngineRef.current?.setAudioMode(value ? 'audioTrack' : 'click');
-          setA11yMessage('Audio mode changed');
-          break;
-        case 'volume':
-          await audioEngineRef.current?.setVolume(value as number);
-          setA11yMessage('Volume changed');
-          break;
-        case 'speed':
-          // ... existing speed case ...
-          break;
-        case 'freqLeft':
-        case 'freqRight':
-          // ... existing frequency cases ...
-          break;
-        // ... other cases ...
-      }
-    } catch (error) {
-      console.error(`Failed to update ${settingName}:`, error);
-      setA11yMessage(`Failed to update ${settingName}`);
-    }
-  };
-
-  // Handle play/pause toggle
-  const togglePlayPause = async () => {
-    try {
-      if (!isPlaying) {
-        console.log('EMDRProcessor: Starting playback');
-        
-        // Ensure audio element is ready
-        if (audioPlayerRef.current) {
-          console.log('EMDRProcessor: Audio element state:', {
-            readyState: audioPlayerRef.current.readyState,
-            paused: audioPlayerRef.current.paused,
-            volume: audioPlayerRef.current.volume,
-            src: audioPlayerRef.current.src
-          });
-          
-          // Set volume before playing
-          audioPlayerRef.current.volume = audioTrackConfig.volume;
-        }
-        
-        if (audioEngineRef.current) {
-          console.log('EMDRProcessor: Starting AudioEngine playback');
-          const success = await audioEngineRef.current.startPlayback();
-          if (!success) {
-            console.warn('EMDRProcessor: Failed to start audio playback, but continuing with visual target');
-          }
-        }
-        
-        setIsPlaying(true);
-        setTimeRemaining(sessionDuration); // Start the timer
-        setA11yMessage('Session started. Visual target moving.');
-        startAnimation();
-      } else {
-        console.log('EMDRProcessor: Stopping playback');
-        
-        if (audioEngineRef.current) {
-          console.log('EMDRProcessor: Stopping AudioEngine');
-          audioEngineRef.current.stopAll();
-        }
-        
-        if (audioPlayerRef.current) {
-          console.log('EMDRProcessor: Pausing audio element');
-          audioPlayerRef.current.pause();
-        }
-        
-        setIsPlaying(false);
-        setTimeRemaining(null); // Reset the timer
-        setA11yMessage('Session paused. Visual target stopped.');
-        stopAnimation();
-      }
-    } catch (error) {
-      console.error('EMDRProcessor: Error in playback:', error);
-      setIsPlaying(false);
-      setTimeRemaining(null);
-      setError('Failed to control playback: ' + (error instanceof Error ? error.message : String(error)));
-    }
-  };
-
   // Handle theme toggle
   const toggleTheme = () => {
     const newDarkMode = !isDarkMode;
@@ -1091,18 +1063,44 @@ export function EMDRProcessor() {
     };
   }, [audioFiles]);
 
-  // Function to handle audio loading errors
-  const handleAudioError = (errorMessage: string) => {
-    setError(errorMessage);
-    setIsLoading(false);
-    
-    // Show error message for screen readers
-    setA11yMessage(`Error: ${errorMessage}`);
-    
-    // Clear error after 5 seconds
-    setTimeout(() => {
-      setError(null);
-    }, 5000);
+  // Clear error after timeout
+  useEffect(() => {
+    if (error) {
+      if (errorTimeoutRef.current) {
+        clearTimeout(errorTimeoutRef.current);
+      }
+      errorTimeoutRef.current = setTimeout(() => {
+        setError(null);
+      }, 5000);
+    }
+    return () => {
+      if (errorTimeoutRef.current) {
+        clearTimeout(errorTimeoutRef.current);
+      }
+    };
+  }, [error]);
+
+  // Update error handling
+  const playGuideTone = (type: 'success' | 'error' | 'warning') => {
+    const audio = new Audio();
+    switch (type) {
+      case 'success':
+        audio.src = '/sounds/success.mp3';
+        break;
+      case 'error':
+        audio.src = '/sounds/error.mp3';
+        break;
+      case 'warning':
+        audio.src = '/sounds/warning.mp3';
+        break;
+    }
+    audio.play().catch(console.error);
+  };
+
+  const handleAudioError = (error: Error) => {
+    setError(error.message);
+    playGuideTone('error');
+    setTimeout(() => setError(null), 5000);
   };
   
   // Update file upload handler
@@ -1157,12 +1155,12 @@ export function EMDRProcessor() {
           setIsLoading(false);
         })
         .catch(error => {
-          handleAudioError(error.toString());
+          handleAudioError(error);
           URL.revokeObjectURL(objectUrl);
         });
       }
-    } catch (error) {
-      handleAudioError(error instanceof Error ? error.message : 'Failed to process audio file');
+    } catch (error: unknown) {
+      handleAudioError(error instanceof Error ? error : new Error(String(error)));
     }
   };
   
@@ -1204,9 +1202,42 @@ export function EMDRProcessor() {
     // Rest of the animation code...
   }, [isPlaying, prefersReducedMotion]);
 
+  // Handle play/pause toggle
+  const togglePlayPause = async () => {
+    if (!audioEngineRef.current) {
+      setError('Audio engine not initialized');
+      setErrorMessage('Failed to start playback');
+      setA11yMessage('Failed to start playback');
+      return;
+    }
+
+    try {
+      if (isPlaying) {
+        audioEngineRef.current.stopAll();
+        setIsPlaying(false);
+        setA11yMessage('Playback stopped');
+      } else {
+        const success = await audioEngineRef.current.startPlayback();
+        if (success) {
+          setIsPlaying(true);
+          setA11yMessage('Playback started');
+        } else {
+          setError('Failed to start playback');
+          setErrorMessage('Failed to start playback');
+          setA11yMessage('Failed to start playback');
+        }
+      }
+    } catch (error) {
+      console.error('EMDRProcessor: Error toggling playback:', error);
+      setError('Failed to control playback');
+      setErrorMessage('Failed to start playback');
+      setA11yMessage('Failed to start playback');
+    }
+  };
+
   return (
     <div 
-      className={`flex flex-col items-center justify-center min-h-screen ${isDarkMode ? 'bg-gray-900' : 'bg-white'} p-4 relative`}
+      className={`flex flex-col items-center justify-center min-h-screen ${isDarkMode ? 'bg-gray-900' : 'bg-gray-100'} p-4 relative`}
       role="region"
       aria-label="EMDR Visual Target"
     >
@@ -1354,6 +1385,17 @@ export function EMDRProcessor() {
           </svg>
         )}
       </button>
+
+      {/* Error message display */}
+      {error && (
+        <div 
+          role="alert"
+          aria-live="assertive"
+          className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded"
+        >
+          {errorMessage || error}
+        </div>
+      )}
     </div>
   );
 } 

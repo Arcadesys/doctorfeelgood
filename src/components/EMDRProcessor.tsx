@@ -346,213 +346,171 @@ export function EMDRProcessor() {
     };
   }, [drawVisualTarget]); // Use drawVisualTarget as dependency (which internally depends on isPlaying)
   
-  // Set up audio context and connections
+  // Initialize audio context
   useEffect(() => {
-    let cleanupFunction: (() => void) | undefined;
-
-    const initializeAudio = () => {
+    // Create new audio context if needed
+    if (!audioContextRef.current.context) {
       try {
-        // Create new audio context if needed
-        if (!audioContextRef.current.context) {
-          const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-          const context = new AudioContext();
-          const gainNode = context.createGain();
-          const panner = context.createStereoPanner();
-          
-          gainNode.connect(panner);
-          panner.connect(context.destination);
-          
-          audioContextRef.current = {
-            context,
-            source: null,
-            panner,
-            gainNode
-          };
-          
-          console.log('Audio context created successfully');
-        }
-
-        // Create and connect source if needed
-        if (audioPlayerRef.current && audioContextRef.current.context && !audioContextRef.current.source) {
-          const source = audioContextRef.current.context.createMediaElementSource(audioPlayerRef.current);
-          source.connect(audioContextRef.current.gainNode!);
-          audioContextRef.current.source = source;
-          console.log('Audio source connected to context');
-        }
-
-        // Set up cleanup function
-        cleanupFunction = () => {
-          const ctx = audioContextRef.current.context;
-          if (ctx && ctx.state !== 'closed') {
-            ctx.close();
-            audioContextRef.current = {
-              context: null,
-              source: null,
-              panner: null,
-              gainNode: null
-            };
-          }
+        const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+        const context = new AudioContext();
+        const gainNode = context.createGain();
+        const panner = context.createStereoPanner();
+        
+        gainNode.connect(panner);
+        panner.connect(context.destination);
+        
+        audioContextRef.current = {
+          context,
+          source: null,
+          panner,
+          gainNode
         };
+        
+        console.log('Audio context created successfully');
       } catch (error) {
-        console.error('Failed to initialize audio:', error);
+        console.error('Failed to create audio context:', error);
       }
-    };
+    }
 
-    initializeAudio();
-
-    // Return cleanup function
     return () => {
-      if (cleanupFunction) {
-        cleanupFunction();
+      const ctx = audioContextRef.current.context;
+      if (ctx && ctx.state !== 'closed') {
+        ctx.close();
+        audioContextRef.current = {
+          context: null,
+          source: null,
+          panner: null,
+          gainNode: null
+        };
       }
     };
   }, []); // Only run once on mount
-  
-  // Update audio pan value when it changes
+
+  // Connect audio element to context
   useEffect(() => {
-    if (audioContextRef.current.panner && audioContextRef.current.panner.pan) {
+    if (!audioPlayerRef.current || !audioContextRef.current.context || audioContextRef.current.source) {
+      return;
+    }
+
+    try {
+      const source = audioContextRef.current.context.createMediaElementSource(audioPlayerRef.current);
+      source.connect(audioContextRef.current.gainNode!);
+      audioContextRef.current.source = source;
+      console.log('Audio source connected to context');
+    } catch (error) {
+      console.error('Failed to connect audio to context:', error);
+    }
+  }, []);
+
+  // Handle pan value changes
+  useEffect(() => {
+    if (audioContextRef.current.panner) {
       audioContextRef.current.panner.pan.value = panValue;
-      console.log(`Pan value updated to: ${panValue}`);
     }
   }, [panValue]);
-  
-  // Handle canvas animation based on play state
-  useEffect(() => {
-    console.log("Animation useEffect triggered. isPlaying:", isPlaying);
+
+  // Draw target helper function
+  const drawTarget = useCallback((ctx: CanvasRenderingContext2D, x: number, y: number) => {
+    // Apply visual intensity to color
+    ctx.fillStyle = targetColor;
     
-    if (isPlaying && canvasRef.current) {
-      console.log("Starting animation, canvas:", canvasRef.current.width, "x", canvasRef.current.height);
-      
-      // Make sure canvas is properly sized
-      canvasRef.current.width = window.innerWidth;
-      canvasRef.current.height = window.innerHeight;
-      
-      // Position and properties of the visual target
-      let x = window.innerWidth / 2;
-      const ballRadius = 20;
-      const maxX = window.innerWidth - ballRadius;
-      const minX = ballRadius;
-      const startTime = Date.now();
-      
-      const animate = useCallback((timestamp: number) => {
-        if (!canvasRef.current) return;
-        
-        const canvas = canvasRef.current;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-        
-        // Clear canvas
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        
-        // Calculate position based on movement pattern
-        const cycleTime = 60000 / bpm; // Time for one complete cycle in ms
-        const progress = (timestamp % cycleTime) / cycleTime;
-        
-        let x;
-        if (targetMovementPattern === 'ping-pong') {
-          // Ping-pong pattern
-          const normalizedProgress = progress < 0.5 ? progress * 2 : 2 - (progress * 2);
-          x = canvas.width * 0.1 + (canvas.width * 0.8 * normalizedProgress);
-        } else {
-          // Sine pattern
-          const amplitude = canvas.width * 0.4; // 40% of screen width
-          const frequency = 2 * Math.PI; // One complete sine wave per cycle
-          x = (canvas.width / 2) + amplitude * Math.sin(frequency * progress);
-        }
-        
-        const y = canvas.height / 2;
-        
-        // Apply visual intensity to color
-        const color = targetColor;
-        ctx.fillStyle = color;
-        
-        // Set up shadow/glow if enabled
-        if (targetHasGlow) {
-          ctx.shadowBlur = targetSize * 0.5;
-          ctx.shadowColor = color;
-          ctx.shadowOffsetX = 0;
-          ctx.shadowOffsetY = 0;
-        } else {
-          ctx.shadowBlur = 0;
-        }
-        
-        // Draw shape based on targetShape
-        if (targetShape === 'circle') {
-          ctx.beginPath();
-          ctx.arc(x, y, targetSize / 2, 0, Math.PI * 2);
-          ctx.fill();
-        } else {
-          // Square
-          const halfSize = targetSize / 2;
-          ctx.fillRect(x - halfSize, y - halfSize, targetSize, targetSize);
-        }
-        
-        // Reset shadow
-        ctx.shadowBlur = 0;
-        
-        // Update pan value for audio
-        const normalizedPan = ((x / canvas.width) * 2) - 1;
-        setPanValue(normalizedPan);
-        
-        // Request next frame if still playing
-        if (isPlaying) {
-          animationIdRef.current = requestAnimationFrame(animate);
-        }
-      }, [isPlaying, bpm, targetSize, targetColor, targetShape, targetHasGlow, targetMovementPattern]);
-      
-      animationIdRef.current = requestAnimationFrame(animate);
-      setAnimationFrameId(animationIdRef.current);
-      
-      if (audioEngineRef.current && !audioEngineRef.current.getIsPlaying()) {
-        audioEngineRef.current.startPlayback();
-      }
+    // Set up shadow/glow if enabled
+    if (targetHasGlow) {
+      ctx.shadowBlur = targetSize * 0.5;
+      ctx.shadowColor = targetColor;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 0;
     } else {
-      // Stop animation and clear canvas when paused
-      if (animationIdRef.current) {
-        console.log("Canceling animation frame:", animationIdRef.current);
-        cancelAnimationFrame(animationIdRef.current);
-        animationIdRef.current = null;
-        setAnimationFrameId(null);
-        
-        // Reset pan to center when animation stops
-        setPanValue(0);
-        
-        // Stop constant tone
-        if (audioEngineRef.current && audioEngineRef.current.getIsPlaying()) {
-          audioEngineRef.current.stopAll();
-        }
-        
-        // Clear canvas
-        if (canvasRef.current) {
-          const ctx = canvasRef.current.getContext('2d');
-          if (ctx) {
-            ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-          }
-        }
-      } else {
-        console.log("No animation frame to cancel");
-      }
-      
-      // Draw static ball after stopping animation
-      setTimeout(() => {
-        drawVisualTarget();
-      }, 50);
+      ctx.shadowBlur = 0;
     }
     
-    // Cleanup animation frame on component unmount
-    return () => {
-      if (animationIdRef.current) {
-        console.log("Cleanup: canceling animation frame");
-        cancelAnimationFrame(animationIdRef.current);
-        animationIdRef.current = null;
-        
-        // Stop constant tone
-        if (audioEngineRef.current && audioEngineRef.current.getIsPlaying()) {
-          audioEngineRef.current.stopAll();
+    // Draw shape based on targetShape
+    if (targetShape === 'circle') {
+      ctx.beginPath();
+      ctx.arc(x, y, targetSize / 2, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // Square
+      const halfSize = targetSize / 2;
+      ctx.fillRect(x - halfSize, y - halfSize, targetSize, targetSize);
+    }
+    
+    // Reset shadow
+    ctx.shadowBlur = 0;
+  }, [targetColor, targetHasGlow, targetShape, targetSize]);
+
+  // Animation function
+  const animate = useCallback((timestamp: number) => {
+    if (!canvasRef.current) return;
+    
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Calculate position based on movement pattern
+    const cycleTime = 60000 / bpm; // Time for one complete cycle in ms
+    const progress = (timestamp % cycleTime) / cycleTime;
+    
+    let x;
+    if (targetMovementPattern === 'ping-pong') {
+      // Ping-pong pattern
+      const normalizedProgress = progress < 0.5 ? progress * 2 : 2 - (progress * 2);
+      x = canvas.width * 0.1 + (canvas.width * 0.8 * normalizedProgress);
+    } else {
+      // Sine pattern
+      const amplitude = canvas.width * 0.4; // 40% of screen width
+      const frequency = 2 * Math.PI; // One complete sine wave per cycle
+      x = (canvas.width / 2) + amplitude * Math.sin(frequency * progress);
+    }
+    
+    const y = canvas.height / 2;
+    
+    // Draw the target
+    drawTarget(ctx, x, y);
+    
+    // Update pan value for audio
+    const normalizedPan = ((x / canvas.width) * 2) - 1;
+    setPanValue(normalizedPan);
+    
+    // Request next frame if still playing
+    if (isPlaying) {
+      animationIdRef.current = requestAnimationFrame(animate);
+    }
+  }, [isPlaying, bpm, targetMovementPattern, drawTarget]);
+
+  // Animation effect
+  useEffect(() => {
+    if (isPlaying && canvasRef.current) {
+      canvasRef.current.width = window.innerWidth;
+      canvasRef.current.height = window.innerHeight;
+      animationIdRef.current = requestAnimationFrame(animate);
+    } else if (animationIdRef.current) {
+      cancelAnimationFrame(animationIdRef.current);
+      animationIdRef.current = null;
+      
+      // Reset pan to center when animation stops
+      setPanValue(0);
+      
+      // Clear canvas and draw static target
+      if (canvasRef.current) {
+        const ctx = canvasRef.current.getContext('2d');
+        if (ctx) {
+          ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+          drawTarget(ctx, canvasRef.current.width / 2, canvasRef.current.height / 2);
         }
       }
+    }
+
+    return () => {
+      if (animationIdRef.current) {
+        cancelAnimationFrame(animationIdRef.current);
+        animationIdRef.current = null;
+      }
     };
-  }, [isPlaying, isDarkMode, bpm, panWidthPercent]); // Add bpm and panWidthPercent to dependencies
+  }, [isPlaying, animate, drawTarget]);
   
   // Handle menu open/close with sound effects
   const toggleMenu = () => {
@@ -705,7 +663,7 @@ export function EMDRProcessor() {
       setPanValue(newPanValue);
       
       // Draw target
-      drawVisualTarget();
+      drawTarget(ctx, canvasRef.current.width / 2, canvasRef.current.height / 2);
       
       // Request next frame
       const frameId = requestAnimationFrame(animate);
@@ -713,7 +671,7 @@ export function EMDRProcessor() {
     };
     
     animate();
-  }, [panWidthPercent]);
+  }, [panWidthPercent, drawTarget]);
 
   const stopAnimation = useCallback(() => {
     if (animationFrameId) {

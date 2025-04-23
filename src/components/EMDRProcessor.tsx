@@ -26,24 +26,40 @@ interface AudioContextState {
   gainNode: GainNode | null;
 }
 
-// Add type for webkitAudioContext
-interface WebkitAudioContext extends AudioContext {}
+interface EMDRTrackConfig {
+  bpm: number;
+  sessionDuration: number;
+  oscillatorType: OscillatorType;
+  volume: number;
+}
+
+// Remove empty interface and unused WebkitAudioContext
 declare global {
   interface Window {
-    webkitAudioContext?: typeof AudioContext;
+    webkitAudioContext: typeof AudioContext;
   }
 }
 
-export function EMDRProcessor() {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [selectedAudio, setSelectedAudio] = useState<AudioFile | null>(null);
-  const [audioFiles, setAudioFiles] = useState<AudioFile[]>([]);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [a11yMessage, setA11yMessage] = useState<string>('Visual target ready. Audio controls available at bottom of screen.');
-  const [isDarkMode, setIsDarkMode] = useState(true);
-  const [panValue, setPanValue] = useState(0); // -1 (left) to 1 (right)
-  const [panWidthPercent, setPanWidthPercent] = useState(80); // Percentage of maximum pan width
+export default function EMDRProcessor() {
+  // State variables
   const [audioMode, setAudioMode] = useState<AudioMode>('click');
+  const [panValue, setPanValue] = useState(0);
+  const [panWidthPercent, setPanWidthPercent] = useState(50);
+  const [a11yMessage, setA11yMessage] = useState('');
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
+  const [selectedAudio, setSelectedAudio] = useState<AudioFile | null>(null);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [animationFrameId, setAnimationFrameId] = useState<number | null>(null);
+  const [audioTrackConfig, setAudioTrackConfig] = useState<EMDRTrackConfig>({
+    bpm: 60,
+    sessionDuration: 300,
+    oscillatorType: 'sine',
+    volume: 0.5
+  });
+
+  const [audioFiles, setAudioFiles] = useState<AudioFile[]>([]);
   const [showLibrary, setShowLibrary] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,14 +72,7 @@ export function EMDRProcessor() {
     enabled: true
   });
   
-  const [audioTrackConfig] = useState<AudioTrackConfig>({
-    volume: 0.7,
-    loop: true,
-    filePath: '/audio/sine-440hz.mp3'
-  });
-  
   // Animation state
-  const [animationFrameId, setAnimationFrameId] = useState<number | null>(null);
   const animationIdRef = useRef<number | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const canvasSizedRef = useRef<boolean>(false);
@@ -85,20 +94,15 @@ export function EMDRProcessor() {
   const audioPlayerRef = useRef<HTMLAudioElement>(null);
   const playStatusSoundRef = useRef<HTMLAudioElement>(null);
   
-  // Add BPM state
-  const [bpm, setBpm] = useState(60); // Default to 60 BPM
-  
-  // Add timer states
-  const [sessionDuration, setSessionDuration] = useState(30); // Default 30 seconds
-  const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-  
   // Visual settings state
   const [targetSize, setTargetSize] = useState(50); // Default size in pixels
   const [targetColor, setTargetColor] = useState('#ff0000'); // Default red
   const [targetShape, setTargetShape] = useState<'circle' | 'square'>('circle');
   const [targetHasGlow, setTargetHasGlow] = useState(true);
   const [targetMovementPattern, setTargetMovementPattern] = useState<'ping-pong' | 'sine'>('ping-pong');
+  
+  // Refs
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
   
   // Draw visual target helper function
   const drawVisualTarget = useCallback(() => {
@@ -448,7 +452,7 @@ export function EMDRProcessor() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
     // Calculate position based on movement pattern
-    const cycleTime = 60000 / bpm; // Time for one complete cycle in ms
+    const cycleTime = 60000 / audioTrackConfig.bpm; // Time for one complete cycle in ms
     const progress = (timestamp % cycleTime) / cycleTime;
     
     let x;
@@ -476,7 +480,7 @@ export function EMDRProcessor() {
     if (isPlaying) {
       animationIdRef.current = requestAnimationFrame(animate);
     }
-  }, [isPlaying, bpm, targetMovementPattern, drawTarget]);
+  }, [isPlaying, audioTrackConfig.bpm, targetMovementPattern, drawTarget]);
 
   // Animation effect
   useEffect(() => {
@@ -574,7 +578,7 @@ export function EMDRProcessor() {
   useEffect(() => {
     if (isPlaying && timeRemaining === null) {
       // Start new session
-      setTimeRemaining(sessionDuration);
+      setTimeRemaining(audioTrackConfig.sessionDuration);
     }
 
     if (timeRemaining !== null && timeRemaining > 0 && isPlaying) {
@@ -607,7 +611,7 @@ export function EMDRProcessor() {
         clearTimeout(timerRef.current);
       }
     };
-  }, [timeRemaining, isPlaying, sessionDuration]);
+  }, [timeRemaining, isPlaying, audioTrackConfig.sessionDuration]);
 
   // Update togglePlayPause to handle timer
   const togglePlayPause = async () => {
@@ -620,7 +624,7 @@ export function EMDRProcessor() {
           }
         }
         setIsPlaying(true);
-        setTimeRemaining(sessionDuration); // Start the timer
+        setTimeRemaining(audioTrackConfig.sessionDuration); // Start the timer
         setA11yMessage('Session started. Visual target moving.');
         startAnimation();
       } else {
@@ -804,41 +808,33 @@ export function EMDRProcessor() {
     targetMovementPattern: 'ping-pong' as const,
     isDarkMode,
     audioMode,
-    bpm,
+    bpm: audioTrackConfig.bpm,
     panWidthPercent,
   };
 
   // Handle setting changes
-  const handleSettingChange = (settingName: string, value: number | string | boolean) => {
-    switch (settingName) {
-      case 'targetSize':
-        setTargetSize(value as number);
-        drawVisualTarget(); // Redraw with new size
-        break;
-      case 'targetColor':
-        setTargetColor(value as string);
-        drawVisualTarget(); // Redraw with new color
-        break;
-      case 'targetShape':
-        setTargetShape(value as 'circle' | 'square');
-        drawVisualTarget(); // Redraw with new shape
-        break;
-      case 'targetHasGlow':
-        setTargetHasGlow(value as boolean);
-        drawVisualTarget(); // Redraw with updated glow effect
-        break;
-      case 'targetMovementPattern':
-        setTargetMovementPattern(value as 'ping-pong' | 'sine');
-        break;
+  const handleSettingChange = (setting: string, value: unknown) => {
+    switch (setting) {
       case 'audioMode':
         setAudioMode(value as AudioMode);
         break;
       case 'panWidthPercent':
         setPanWidthPercent(value as number);
         break;
-      case 'isDarkMode':
-        setIsDarkMode(value as boolean);
+      case 'bpm':
+        setAudioTrackConfig(prev => ({ ...prev, bpm: value as number }));
         break;
+      case 'sessionDuration':
+        setAudioTrackConfig(prev => ({ ...prev, sessionDuration: value as number }));
+        break;
+      case 'oscillatorType':
+        setAudioTrackConfig(prev => ({ ...prev, oscillatorType: value as OscillatorType }));
+        break;
+      case 'volume':
+        setAudioTrackConfig(prev => ({ ...prev, volume: value as number }));
+        break;
+      default:
+        console.warn(`Unknown setting: ${setting}`);
     }
   };
 

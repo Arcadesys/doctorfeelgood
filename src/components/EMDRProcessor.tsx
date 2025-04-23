@@ -10,6 +10,7 @@ import {
 } from '../lib/audioEngine';
 import { useRouter } from 'next/navigation';
 import CustomKnob from './CustomKnob';
+import UnifiedSettings from './UnifiedSettings';
 
 // Simple version without the File System Access API
 type AudioFile = {
@@ -27,9 +28,6 @@ interface AudioContextState {
   panner: StereoPannerNode | null;
   gainNode: GainNode | null;
 }
-
-// Update the audio mode type
-// type AudioMode = 'click' | 'audioTrack';
 
 export function EMDRProcessor() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -169,7 +167,7 @@ export function EMDRProcessor() {
       audioEngineRef.current.setAudioMode(audioMode);
       
       // Update accessibility message
-      setA11yMessage(`Audio mode changed to ${audioMode === 'audioTrack' ? 'audio track' : 'click'}`);
+      setA11yMessage(`Audio mode changed to ${audioMode === 'track' ? 'audio track' : 'click'}`);
     }
   }, [audioMode, isPlaying]);
   
@@ -970,6 +968,51 @@ export function EMDRProcessor() {
     handleFileUpload(file);
   };
 
+  // Current settings for the unified settings component
+  const currentSettings = {
+    speed: 1000, // Default speed
+    freqLeft: 440, // A4
+    freqRight: 480, // Higher tone
+    targetSize: 50, // Default size in pixels
+    visualIntensity: 0.8, // Default to 80%
+    sessionDuration: timeRemaining ? Math.ceil(timeRemaining / 60) : 30, // Convert seconds to minutes
+    oscillatorType: 'sine' as const,
+    targetColor: '#ff0000', // Default red
+    targetShape: 'circle' as const,
+    targetHasGlow: true,
+    targetMovementPattern: 'ping-pong' as const,
+    isDarkMode,
+    audioMode,
+    bpm,
+    panWidthPercent,
+  };
+
+  // Handle setting changes
+  const handleSettingChange = (settingName: string, value: number | string | boolean) => {
+    switch (settingName) {
+      case 'isDarkMode':
+        setIsDarkMode(value as boolean);
+        break;
+      case 'audioMode':
+        setAudioMode(value as 'click' | 'track');
+        if (audioEngineRef.current) {
+          audioEngineRef.current.setAudioMode(value as 'click' | 'track');
+        }
+        break;
+      case 'bpm':
+        setBpm(value as number);
+        break;
+      case 'panWidthPercent':
+        setPanWidthPercent(value as number);
+        break;
+      case 'sessionDuration':
+        setSessionDuration(value as number);
+        setTimeRemaining((value as number) * 60);
+        break;
+      // Add other cases as needed
+    }
+  };
+
   return (
     <div className={`flex flex-col items-center justify-center min-h-screen ${isDarkMode ? 'bg-gray-900' : 'bg-white'} p-4 relative`}>
       {/* Audio elements for sound effects and playback */}
@@ -1019,7 +1062,7 @@ export function EMDRProcessor() {
       
       {/* Hamburger Menu Button */}
       <button 
-        className={`absolute top-4 right-4 ${isDarkMode ? 'text-white' : 'text-gray-800'} z-20`}
+        className={`absolute top-4 left-4 ${isDarkMode ? 'text-white' : 'text-gray-800'} z-20`}
         onClick={toggleMenu}
         aria-label="Toggle menu"
       >
@@ -1030,422 +1073,14 @@ export function EMDRProcessor() {
         </svg>
       </button>
 
-      {/* Sliding Menu */}
-      <div 
-        ref={menuRef}
-        className={`fixed top-0 right-0 h-full bg-gray-900 dark:bg-gray-900 bg-gray-100 w-80 p-6 shadow-lg z-10 transform transition-transform duration-300 ease-in-out ${isMenuOpen ? 'translate-x-0' : 'translate-x-full'} overflow-y-auto`}
-        aria-hidden={!isMenuOpen}
-      >
-        <h2 className="text-2xl font-bold mb-6 text-white dark:text-white text-gray-800">EMDR Settings</h2>
-        
-        {/* Display Mode Toggle */}
-        <div className="mb-6">
-          <h3 className="text-xl font-bold text-white dark:text-white text-gray-800 mb-4">Display Mode</h3>
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4 flex items-center justify-between">
-            <span className={`font-medium ${isDarkMode ? 'text-gray-500' : 'text-gray-900'} flex items-center`}>
-              {/* Sun icon */}
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <circle cx="12" cy="12" r="5" />
-                <line x1="12" y1="1" x2="12" y2="3" />
-                <line x1="12" y1="21" x2="12" y2="23" />
-                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
-                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
-                <line x1="1" y1="12" x2="3" y2="12" />
-                <line x1="21" y1="12" x2="23" y2="12" />
-                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
-                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-              </svg>
-              Light
-            </span>
-            
-            {/* Toggle Switch */}
-            <button 
-              onClick={toggleTheme}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${isDarkMode ? 'bg-blue-600' : 'bg-gray-200'}`}
-              role="switch"
-              aria-checked={isDarkMode}
-              aria-label="Toggle dark mode"
-            >
-              <span 
-                className={`${isDarkMode ? 'translate-x-6' : 'translate-x-1'} inline-block h-4 w-4 transform rounded-full bg-white transition-transform`}
-              />
-            </button>
-            
-            <span className={`font-medium ${isDarkMode ? 'text-white' : 'text-gray-500'} flex items-center`}>
-              {/* Moon icon */}
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-              </svg>
-              Dark
-            </span>
-          </div>
-        </div>
-        
-        {/* Audio Mode Selection */}
-        <div className="mb-6">
-          <h3 className="text-xl font-bold text-white dark:text-white text-gray-800 mb-4">Audio Mode</h3>
-          
-          <div className="space-y-4">
-            <h3 className="text-lg font-medium">Audio Mode</h3>
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={() => {
-                  setAudioMode('click');
-                  audioEngineRef.current?.setAudioMode('click');
-                }}
-                className={`px-4 py-2 rounded ${
-                  audioMode === 'click'
-                    ? 'bg-violet-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                Click Mode
-              </button>
-              <button
-                onClick={() => {
-                  setAudioMode('audioTrack');
-                  audioEngineRef.current?.setAudioMode('audioTrack');
-                }}
-                className={`px-4 py-2 rounded ${
-                  audioMode === 'audioTrack'
-                    ? 'bg-violet-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                Audio Track Mode
-              </button>
-            </div>
-          </div>
-        </div>
-        
-        {/* Common Settings - shown for all modes */}
-        <div className="mb-6">
-          <h3 className="text-xl font-bold text-white dark:text-white text-gray-800 mb-4">Session Settings</h3>
-          
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
-            <h4 className={`font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Panning Parameters</h4>
-            
-            <div className="mb-3">
-              <div className="flex justify-between mb-1">
-                <label className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                  Frequency: {bpm} BPM
-                </label>
-              </div>
-              <input 
-                type="range" 
-                min="6" 
-                max="120" 
-                step="1"
-                value={bpm}
-                onChange={(e) => setBpm(Number(e.target.value))}
-                className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
-                aria-label="Panning frequency in BPM"
-              />
-              <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mt-1`}>
-                Speed of panning in beats per minute (lower = slower)
-              </p>
-            </div>
-            
-            {/* BPM presets */}
-            <div className="flex flex-wrap gap-2 mt-3 mb-4">
-              {[6, 12, 24, 40, 60, 90].map(presetBpm => (
-                <button
-                  key={presetBpm}
-                  onClick={() => setBpm(presetBpm)}
-                  className={`px-2 py-1 text-xs ${
-                    bpm === presetBpm
-                    ? 'bg-blue-600 text-white'
-                    : isDarkMode
-                      ? 'bg-gray-700 hover:bg-gray-600 text-gray-200'
-                      : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-                  } rounded`}
-                >
-                  {presetBpm} BPM
-                </button>
-              ))}
-            </div>
-            
-            <div className="mb-3">
-              <div className="flex justify-between mb-1">
-                <label className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                  Pan Width: {panWidthPercent}%
-                </label>
-              </div>
-              <input 
-                type="range" 
-                min="10" 
-                max="100" 
-                step="5"
-                value={panWidthPercent}
-                onChange={(e) => setPanWidthPercent(Number(e.target.value))}
-                className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
-                aria-label="Pan width percentage"
-              />
-              <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mt-1`}>
-                Percentage of complete left-right panning
-              </p>
-            </div>
-          </div>
-        </div>
-        
-        {/* Audio Track Settings */}
-        {audioMode === 'audioTrack' && (
-          <div className="mb-6">
-            <h3 className="text-xl font-bold text-white dark:text-white text-gray-800 mb-4">Audio Track</h3>
-            
-            <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
-              <div className="text-center p-6 border-2 border-dashed rounded-lg border-gray-400 dark:border-gray-600">
-                <h4 className={`font-bold mb-4 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Upload Your Audio</h4>
-                <p className={`text-sm mb-4 ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                  Upload an MP3 file to create a bilateral stimulation track
-                </p>
-                
-                {/* Error message */}
-                {error && (
-                  <div className={`mb-4 p-3 rounded ${isDarkMode ? 'bg-red-900 text-red-200' : 'bg-red-100 text-red-800'}`} role="alert">
-                    {error}
-                  </div>
-                )}
-                
-                <input 
-                  type="file" 
-                  accept="audio/*"
-                  className={`hidden`}
-                  id="audio-upload"
-                  onChange={handleFileInputChange}
-                  disabled={isLoading}
-                  aria-label="Upload audio file"
-                />
-                <label 
-                  htmlFor="audio-upload"
-                  className={`inline-block px-6 py-3 ${
-                    isLoading
-                      ? isDarkMode ? 'bg-gray-700 cursor-wait' : 'bg-gray-200 cursor-wait'
-                      : isDarkMode 
-                        ? 'bg-blue-600 hover:bg-blue-500 cursor-pointer' 
-                        : 'bg-blue-100 hover:bg-blue-200 cursor-pointer'
-                  } text-${isDarkMode ? 'white' : 'blue-800'} rounded-lg transition-colors duration-200`}
-                  role="button"
-                  tabIndex={0}
-                  onKeyPress={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      document.getElementById('audio-upload')?.click();
-                    }
-                  }}
-                >
-                  {isLoading ? (
-                    <div className="flex items-center">
-                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      Processing...
-                    </div>
-                  ) : (
-                    'Choose File'
-                  )}
-                </label>
-                <p className={`mt-2 text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                  {selectedAudio ? selectedAudio.name : 'No file chosen'}
-                </p>
-              </div>
-              
-              {/* Song Library Button */}
-              <button 
-                className={`w-full mt-4 ${
-                  isDarkMode 
-                    ? 'bg-blue-900 hover:bg-blue-800 text-blue-200' 
-                    : 'bg-blue-100 hover:bg-blue-200 text-blue-800'
-                } py-3 px-4 rounded-lg flex items-center justify-center transition-colors duration-200`}
-                onClick={() => setShowLibrary(!showLibrary)}
-                aria-expanded={showLibrary}
-                aria-label="Toggle song library"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2">
-                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
-                </svg>
-                Your Song Library ({audioFiles.length})
-              </button>
-              
-              {/* Song Library Panel */}
-              {showLibrary && (
-                <div className={`mt-4 p-4 rounded-lg ${isDarkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
-                  <h5 className={`font-medium mb-3 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-                    Recent Songs
-                  </h5>
-                  {audioFiles.length === 0 ? (
-                    <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                      No songs in library yet
-                    </p>
-                  ) : (
-                    <ul className="space-y-2">
-                      {audioFiles
-                        .sort((a, b) => new Date(b.lastUsed).getTime() - new Date(a.lastUsed).getTime())
-                        .map(file => (
-                          <li 
-                            key={file.id}
-                            className={`flex items-center justify-between p-2 rounded ${
-                              selectedAudio?.id === file.id
-                                ? isDarkMode ? 'bg-blue-900' : 'bg-blue-100'
-                                : isDarkMode ? 'hover:bg-gray-600' : 'hover:bg-gray-200'
-                            } cursor-pointer`}
-                            onClick={() => selectAudioFile(file)}
-                            role="button"
-                            tabIndex={0}
-                            onKeyPress={(e) => {
-                              if (e.key === 'Enter' || e.key === ' ') {
-                                selectAudioFile(file);
-                              }
-                            }}
-                          >
-                            <div>
-                              <div className={`font-medium ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-                                {file.name}
-                              </div>
-                              <div className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                                Last used: {file.lastUsed}
-                              </div>
-                            </div>
-                            <button
-                              onClick={(e) => deleteAudioFile(file.id, e)}
-                              className={`p-1 rounded-full ${
-                                isDarkMode 
-                                  ? 'hover:bg-red-900 text-red-400' 
-                                  : 'hover:bg-red-100 text-red-600'
-                              }`}
-                              aria-label={`Delete ${file.name}`}
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M3 6h18"></path>
-                                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
-                                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
-                              </svg>
-                            </button>
-                          </li>
-                        ))}
-                    </ul>
-                  )}
-                  
-                  {/* Volume Control */}
-                  <div className="mt-4">
-                    <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                      Volume
-                    </label>
-                    <div className="flex items-center gap-2">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={isDarkMode ? 'text-gray-400' : 'text-gray-600'}>
-                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
-                        <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
-                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
-                      </svg>
-                      <input 
-                        type="range" 
-                        min="0" 
-                        max="1" 
-                        step="0.1"
-                        value={audioTrackConfig.volume}
-                        onChange={(e) => {
-                          const newVolume = parseFloat(e.target.value);
-                          setAudioTrackConfig(prev => ({
-                            ...prev,
-                            volume: newVolume
-                          }));
-                          
-                          // Update audio player volume
-                          if (audioPlayerRef.current) {
-                            audioPlayerRef.current.volume = newVolume;
-                          }
-                        }}
-                        className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
-                        aria-label="Audio volume"
-                      />
-                      <span className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                        {Math.round(audioTrackConfig.volume * 100)}%
-                      </span>
-                    </div>
-                  </div>
-                  
-                  {/* Loop Toggle */}
-                  <div className="mt-4 flex items-center justify-between">
-                    <label className={`text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                      Loop Audio
-                    </label>
-                    <button
-                      role="switch"
-                      aria-checked={audioTrackConfig.loop}
-                      onClick={() => {
-                        setAudioTrackConfig(prev => ({
-                          ...prev,
-                          loop: !prev.loop
-                        }));
-                        
-                        // Update audio player loop setting
-                        if (audioPlayerRef.current) {
-                          audioPlayerRef.current.loop = !audioTrackConfig.loop;
-                        }
-                      }}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                        audioTrackConfig.loop
-                          ? isDarkMode ? 'bg-blue-600' : 'bg-blue-500'
-                          : isDarkMode ? 'bg-gray-600' : 'bg-gray-300'
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          audioTrackConfig.loop ? 'translate-x-6' : 'translate-x-1'
-                        }`}
-                      />
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Session Timer Settings */}
-        <div className="mb-6">
-          <h3 className="text-xl font-bold text-white dark:text-white text-gray-800 mb-4">Session Timer</h3>
-          
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-4">
-            <div className="mb-3">
-              <div className="flex justify-between mb-1">
-                <label className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                  Duration: {sessionDuration} seconds
-                </label>
-              </div>
-              <input 
-                type="range" 
-                min="10" 
-                max="120" 
-                step="5"
-                value={sessionDuration}
-                onChange={(e) => setSessionDuration(Number(e.target.value))}
-                className={`w-full h-2 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-lg appearance-none cursor-pointer`}
-                aria-label="Session duration in seconds"
-              />
-            </div>
-            
-            {/* Duration presets */}
-            <div className="flex flex-wrap gap-2 mt-3">
-              {[10, 30, 60, 90, 120].map(duration => (
-                <button
-                  key={duration}
-                  onClick={() => setSessionDuration(duration)}
-                  className={`px-2 py-1 text-xs ${
-                    sessionDuration === duration
-                    ? 'bg-blue-600 text-white'
-                    : isDarkMode
-                      ? 'bg-gray-700 hover:bg-gray-600 text-gray-200'
-                      : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-                  } rounded`}
-                >
-                  {duration}s
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* Replace the old menu with UnifiedSettings */}
+      <UnifiedSettings
+        isOpen={isMenuOpen}
+        onClose={() => setIsMenuOpen(false)}
+        isSessionActive={isPlaying}
+        settings={currentSettings}
+        onSettingChange={handleSettingChange}
+      />
 
       {/* Main Content with Canvas */}
       <h1 className={`text-3xl font-bold mb-6 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>EMDR Therapy</h1>

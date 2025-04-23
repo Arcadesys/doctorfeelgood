@@ -1,6 +1,6 @@
 // Audio Engine for EMDR Processor
 
-export type AudioMode = 'click' | 'audioTrack';
+export type AudioMode = 'click' | 'track';
 
 export interface ContactSoundConfig {
   leftSamplePath: string;
@@ -208,7 +208,7 @@ export class AudioEngine {
       if (this.currentMode === 'click') {
         this.isPlaying = true;
         return true;
-      } else if (this.currentMode === 'audioTrack') {
+      } else if (this.currentMode === 'track') {
         this.startAudioTrack();
         return true;
       }
@@ -223,14 +223,14 @@ export class AudioEngine {
   public stopAll(): void {
     if (this.currentMode === 'click') {
       this.isPlaying = false;
-    } else if (this.currentMode === 'audioTrack') {
+    } else if (this.currentMode === 'track') {
       this.stopAudioTrack();
     }
   }
   
   // Start playing audio track
   private startAudioTrack(): void {
-    if (!this.context || this.isPlaying || this.currentMode !== 'audioTrack' || !this.audioElement) return;
+    if (!this.context || this.isPlaying || this.currentMode !== 'track' || !this.audioElement) return;
     
     try {
       if (!this.audioElementConnected && this.audioTrackNode === null) {
@@ -266,7 +266,7 @@ export class AudioEngine {
   
   // Stop playing audio track
   private stopAudioTrack(): void {
-    if (!this.isPlaying || this.currentMode !== 'audioTrack' || !this.audioElement) return;
+    if (!this.isPlaying || this.currentMode !== 'track' || !this.audioElement) return;
     
     try {
       this.audioElement.pause();

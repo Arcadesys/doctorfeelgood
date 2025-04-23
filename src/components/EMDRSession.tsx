@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import * as Tone from 'tone';
 import EMDRTarget from './EMDRTarget';
 import SessionTimer from './SessionTimer';
-import SettingsDrawer from './SettingsDrawer';
+import UnifiedSettings from './UnifiedSettings';
 import { useAudioSynthesis } from '../hooks/useAudioSynthesis';
 import { playGuideTone } from '../utils/soundUtils';
 
@@ -168,6 +168,8 @@ const EMDRSession: React.FC<EMDRSessionProps> = ({
     targetMovementPattern,
     isDarkMode,
     audioMode,
+    bpm: Math.round(60000 / speed), // Convert speed to BPM
+    panWidthPercent: 80, // Default pan width
   };
 
   return (
@@ -241,8 +243,8 @@ const EMDRSession: React.FC<EMDRSessionProps> = ({
           </div>
         </div>
         
-        {/* Settings Drawer */}
-        <SettingsDrawer
+        {/* Unified Settings */}
+        <UnifiedSettings
           isOpen={isSettingsOpen}
           onClose={() => setIsSettingsOpen(false)}
           isSessionActive={isActive}

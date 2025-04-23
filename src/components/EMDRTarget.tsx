@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 
 interface EMDRTargetProps {
@@ -6,14 +6,15 @@ interface EMDRTargetProps {
   speed?: number; // time in ms for one full cycle
   size?: number; // size in pixels
   color?: string;
-  shape?: 'circle' | 'square';
+  shape?: 'circle' | 'square' | 'triangle' | 'diamond' | 'star';
   hasGlow?: boolean;
   movementPattern?: 'ping-pong' | 'sine';
   pingPong?: boolean;
   intensity?: number; // 0 to 1 for opacity
+  visualIntensity?: number; // 0 to 100 for visual intensity
 }
 
-const EMDRTarget: React.FC<EMDRTargetProps> = ({
+export const EMDRTarget: React.FC<EMDRTargetProps> = ({
   isActive = false,
   speed = 1000,
   size = 40,
@@ -22,111 +23,85 @@ const EMDRTarget: React.FC<EMDRTargetProps> = ({
   hasGlow = true,
   movementPattern = 'ping-pong',
   intensity = 1,
+  visualIntensity = 100,
 }) => {
-  const [position, setPosition] = useState<'left' | 'center' | 'right'>('center');
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [glowIntensity, setGlowIntensity] = useState(0);
 
   useEffect(() => {
-    if (!isActive) {
-      setPosition('center');
-      return;
-    }
+    const canvas = canvasRef.current;
+    if (!canvas) return;
 
-    if (movementPattern === 'ping-pong') {
-      let currentPosition: 'left' | 'center' | 'right' = 'center';
-      let direction: 'left' | 'right' = 'right';
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const drawShape = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
       
-      const interval = setInterval(() => {
-        if (direction === 'right') {
-          currentPosition = currentPosition === 'left' ? 'center' : 'right';
-          if (currentPosition === 'right') direction = 'left';
-        } else {
-          currentPosition = currentPosition === 'right' ? 'center' : 'left';
-          if (currentPosition === 'left') direction = 'right';
-        }
-        
-        setPosition(currentPosition);
-      }, speed / 2); // Divide by 2 because we have 2 movements per cycle
+      // Apply visual intensity to color opacity
+      const [r, g, b] = color.match(/\d+/g)?.map(Number) || [255, 255, 255];
+      const opacity = visualIntensity / 100;
+      ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${opacity})`;
+      ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${opacity})`;
 
-      return () => clearInterval(interval);
-    }
-  }, [isActive, speed, movementPattern]);
+      if (hasGlow) {
+        ctx.shadowColor = color;
+        ctx.shadowBlur = glowIntensity;
+      }
 
-  // Calculate x position based on state
-  const getXPosition = () => {
-    switch (position) {
-      case 'left': return '-80%';
-      case 'right': return '80%';
-      default: return '0%';
-    }
-  };
-
-  // Calculate opacity based on intensity
-  const getOpacity = () => {
-    // Ensure minimum visibility of 30% even at lowest intensity
-    return 0.3 + (intensity * 0.7);
-  };
-
-  // Calculate pulsing effect for center position
-  const getPulseScale = () => {
-    return position === 'center' ? 1.2 : 1;
-  };
-
-  // Determine background color with appropriate opacity
-  const getBackgroundColor = () => {
-    // Convert hex to rgba with opacity
-    if (color.startsWith('#')) {
-      const r = parseInt(color.slice(1, 3), 16);
-      const g = parseInt(color.slice(3, 5), 16);
-      const b = parseInt(color.slice(5, 7), 16);
-      return `rgba(${r}, ${g}, ${b}, ${getOpacity()})`;
-    }
-    return color;
-  };
-
-  // Get shape-specific styles
-  const getShapeStyles = () => {
-    const baseStyles = {
-      width: size,
-      height: size,
-      backgroundColor: getBackgroundColor(),
+      ctx.beginPath();
+      switch (shape) {
+        case 'circle':
+          ctx.arc(position.x, position.y, size / 2, 0, Math.PI * 2);
+          break;
+        case 'square':
+          ctx.rect(position.x - size / 2, position.y - size / 2, size, size);
+          break;
+        case 'triangle':
+          ctx.moveTo(position.x, position.y - size / 2);
+          ctx.lineTo(position.x + size / 2, position.y + size / 2);
+          ctx.lineTo(position.x - size / 2, position.y + size / 2);
+          ctx.closePath();
+          break;
+        case 'diamond':
+          ctx.moveTo(position.x, position.y - size / 2);
+          ctx.lineTo(position.x + size / 2, position.y);
+          ctx.lineTo(position.x, position.y + size / 2);
+          ctx.lineTo(position.x - size / 2, position.y);
+          ctx.closePath();
+          break;
+        case 'star':
+          const spikes = 5;
+          const outerRadius = size / 2;
+          const innerRadius = size / 4;
+          for (let i = 0; i < spikes * 2; i++) {
+            const radius = i % 2 === 0 ? outerRadius : innerRadius;
+            const angle = (i * Math.PI) / spikes;
+            const x = position.x + Math.cos(angle) * radius;
+            const y = position.y + Math.sin(angle) * radius;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          ctx.closePath();
+          break;
+      }
+      ctx.fill();
+      ctx.stroke();
     };
 
-    if (hasGlow) {
-      baseStyles.boxShadow = `0 0 ${size/4}px ${getBackgroundColor()}`;
-    }
-
-    if (shape === 'square') {
-      baseStyles.borderRadius = '4px';
-    } else {
-      baseStyles.borderRadius = '50%';
-    }
-
-    return baseStyles;
-  };
+    drawShape();
+  }, [size, color, shape, hasGlow, glowIntensity, position, visualIntensity]);
 
   return (
-    <div 
-      className="relative w-full h-32 flex items-center justify-center" 
-      role="region" 
-      aria-label="EMDR visual target"
-    >
-      <motion.div
-        animate={{
-          x: getXPosition(),
-          scale: getPulseScale(),
-        }}
-        initial={{ x: '0%' }}
-        transition={{
-          type: "spring",
-          stiffness: 100,
-          damping: 15,
-        }}
-        className="absolute"
-        style={getShapeStyles()}
-        aria-live="polite"
-        aria-label={`Target is at the ${position} position`}
-      />
-    </div>
+    <canvas
+      ref={canvasRef}
+      width={size * 2}
+      height={size * 2}
+      style={{ position: 'absolute', top: 0, left: 0 }}
+      role="img"
+      aria-label={`EMDR target: ${shape} shape`}
+    />
   );
 };
 

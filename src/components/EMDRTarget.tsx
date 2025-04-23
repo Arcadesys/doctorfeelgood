@@ -11,9 +11,6 @@ interface EMDRTargetProps {
   movementPattern?: 'ping-pong' | 'sine';
   pingPong?: boolean;
   intensity?: number; // 0 to 1 for opacity
-  x?: number;
-  y?: number;
-  isDarkMode?: boolean;
 }
 
 const EMDRTarget: React.FC<EMDRTargetProps> = ({
@@ -25,9 +22,6 @@ const EMDRTarget: React.FC<EMDRTargetProps> = ({
   hasGlow = true,
   movementPattern = 'ping-pong',
   intensity = 1,
-  x,
-  y,
-  isDarkMode,
 }) => {
   const [position, setPosition] = useState<'left' | 'center' | 'right'>('center');
 

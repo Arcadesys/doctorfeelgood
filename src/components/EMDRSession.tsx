@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import * as Tone from 'tone';
 import EMDRTarget from './EMDRTarget';
 import SessionTimer from './SessionTimer';
 import UnifiedSettings from './UnifiedSettings';
@@ -32,10 +31,16 @@ const EMDRSession: React.FC<EMDRSessionProps> = ({
   const [targetShape, setTargetShape] = useState<'circle' | 'square'>('circle');
   const [targetHasGlow, setTargetHasGlow] = useState(true);
   const [targetMovementPattern, setTargetMovementPattern] = useState<'ping-pong' | 'sine'>('ping-pong');
-  const [sessionDuration, setSessionDuration] = useState(5); // default 5 minutes
-  const [useConstantPanning, setUseConstantPanning] = useState(true); // Toggle for panning vs ping-pong
+  const [sessionDuration, setSessionDuration] = useState(0);
+  const [useConstantPanning, setUseConstantPanning] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true); // default to dark mode
   const [audioMode, setAudioMode] = useState<'click' | 'track'>('click'); // default to click mode
+  const [bpm, setBpm] = useState(60);
+  const [audioTrackConfig, setAudioTrackConfig] = useState<AudioTrackConfig>({
+    volume: 0.5,
+    pan: 0,
+    muted: false,
+  });
   
   // UI state
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -197,3 +202,67 @@ const EMDRSession: React.FC<EMDRSessionProps> = ({
         </div>
         
         <div className={`
+          relative 
+          flex 
+          flex-col 
+          items-center 
+          justify-center 
+          space-y-8
+          ${isDarkMode ? 'bg-gray-800' : 'bg-gray-100'} 
+          p-8 
+          rounded-xl
+          shadow-lg
+        `}>
+          <EMDRTarget
+            isActive={isActive}
+            speed={speed}
+            size={targetSize}
+            intensity={visualIntensity}
+            color={targetColor}
+            shape={targetShape}
+            hasGlow={targetHasGlow}
+            movementPattern={targetMovementPattern}
+            isDarkMode={isDarkMode}
+          />
+          
+          <SessionTimer
+            isActive={isActive}
+            duration={sessionDuration}
+            onComplete={handleTimerComplete}
+            isDarkMode={isDarkMode}
+          />
+          
+          <div className="flex space-x-4">
+            <button
+              onClick={isActive ? stopSession : startSession}
+              className={`
+                px-6 
+                py-3 
+                rounded-lg 
+                font-semibold 
+                transition-colors
+                ${isActive
+                  ? 'bg-red-600 hover:bg-red-700 text-white'
+                  : 'bg-green-600 hover:bg-green-700 text-white'
+                }
+              `}
+              aria-label={isActive ? 'Stop session' : 'Start session'}
+            >
+              {isActive ? 'Stop' : 'Start'}
+            </button>
+          </div>
+        </div>
+
+        <UnifiedSettings
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+          settings={currentSettings}
+          onSettingChange={handleSettingChange}
+          isDarkMode={isDarkMode}
+        />
+      </div>
+    </div>
+  );
+};
+
+export default EMDRSession;

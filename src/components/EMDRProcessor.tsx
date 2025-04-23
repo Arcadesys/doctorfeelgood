@@ -263,7 +263,7 @@ export default function EMDRProcessor() {
         audioPlayerRef.current.onloadstart = () => console.log('Audio loading started');
         audioPlayerRef.current.onloadeddata = () => console.log('Audio data loaded');
         audioPlayerRef.current.oncanplay = () => console.log('Audio can play');
-        audioPlayerRef.current.onerror = (e) => {
+        audioPlayerRef.current.onerror = () => {
           const error = audioPlayerRef.current?.error;
           console.error('Audio loading error:', {
             code: error?.code,

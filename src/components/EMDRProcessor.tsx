@@ -4,8 +4,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   AudioEngine, 
   AudioMode,
-  ContactSoundConfig, 
-  AudioTrackConfig
+  ContactSoundConfig
 } from '../lib/audioEngine';
 import UnifiedSettings from './UnifiedSettings';
 
@@ -520,7 +519,7 @@ export default function EMDRProcessor() {
     setIsMenuOpen(!isMenuOpen);
   };
 
-  // Close menu when clicking outside
+  // Handle click outside menu
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
@@ -530,7 +529,7 @@ export default function EMDRProcessor() {
         }
       }
     }
-    
+
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
@@ -645,11 +644,6 @@ export default function EMDRProcessor() {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const handleAudioError = (errorMessage: string) => {
-    console.error('Audio error:', errorMessage);
-    setA11yMessage(`Audio error: ${errorMessage}`);
   };
 
   // Current settings for the unified settings component

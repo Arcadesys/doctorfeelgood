@@ -95,11 +95,11 @@ export default function EMDRProcessor() {
   const playStatusSoundRef = useRef<HTMLAudioElement>(null);
   
   // Visual settings state
-  const [targetSize, setTargetSize] = useState(50); // Default size in pixels
-  const [targetColor, setTargetColor] = useState('#ff0000'); // Default red
-  const [targetShape, setTargetShape] = useState<'circle' | 'square'>('circle');
-  const [targetHasGlow, setTargetHasGlow] = useState(true);
-  const [targetMovementPattern, setTargetMovementPattern] = useState<'ping-pong' | 'sine'>('ping-pong');
+  const [targetSize] = useState(50);
+  const [targetColor] = useState('#ffffff');
+  const [targetShape] = useState<'circle' | 'square'>('circle');
+  const [targetHasGlow] = useState(true);
+  const [targetMovementPattern] = useState<'ping-pong' | 'sine'>('ping-pong');
   
   // Refs
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -798,14 +798,14 @@ export default function EMDRProcessor() {
     speed: 1000, // Default speed
     freqLeft: 440, // A4
     freqRight: 480, // Higher tone
-    targetSize: 50, // Default size in pixels
-    visualIntensity: 0.8, // Default to 80%
-    sessionDuration: timeRemaining ? Math.ceil(timeRemaining / 60) : 30, // Convert seconds to minutes
-    oscillatorType: 'sine' as const,
-    targetColor: '#ff0000', // Default red
-    targetShape: 'circle' as const,
-    targetHasGlow: true,
-    targetMovementPattern: 'ping-pong' as const,
+    targetSize,
+    visualIntensity: 1,
+    sessionDuration: audioTrackConfig.sessionDuration,
+    oscillatorType: audioTrackConfig.oscillatorType as 'sine' | 'square' | 'sawtooth' | 'triangle',
+    targetColor,
+    targetShape,
+    targetHasGlow,
+    targetMovementPattern,
     isDarkMode,
     audioMode,
     bpm: audioTrackConfig.bpm,

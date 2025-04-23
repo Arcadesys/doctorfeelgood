@@ -1,15 +1,12 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import Link from 'next/link';
 import { 
   AudioEngine, 
   AudioMode,
   ContactSoundConfig, 
   AudioTrackConfig
 } from '../lib/audioEngine';
-import { useRouter } from 'next/navigation';
-import CustomKnob from './CustomKnob';
 import UnifiedSettings from './UnifiedSettings';
 
 // Simple version without the File System Access API
@@ -45,7 +42,7 @@ export function EMDRProcessor() {
   const [error, setError] = useState<string | null>(null);
   
   // Audio engine settings
-  const [contactSoundConfig, setContactSoundConfig] = useState<ContactSoundConfig>({
+  const [contactSoundConfig] = useState<ContactSoundConfig>({
     leftSamplePath: '/sounds/click-left.mp3',
     rightSamplePath: '/sounds/click-right.mp3',
     volume: 0.5,
@@ -61,9 +58,8 @@ export function EMDRProcessor() {
   // Animation state
   const [animationFrameId, setAnimationFrameId] = useState<number | null>(null);
   const animationIdRef = useRef<number | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const canvasSizedRef = useRef<boolean>(false);
-  const lastTriggerTimeRef = useRef<number>(0);
-  const lastTriggerSideRef = useRef<'left' | 'right' | null>(null);
   
   // Audio context state
   const audioContextRef = useRef<AudioContextState>({
@@ -80,7 +76,6 @@ export function EMDRProcessor() {
   const menuOpenSoundRef = useRef<HTMLAudioElement>(null);
   const menuCloseSoundRef = useRef<HTMLAudioElement>(null);
   const audioPlayerRef = useRef<HTMLAudioElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const playStatusSoundRef = useRef<HTMLAudioElement>(null);
   
   // Add BPM state
@@ -99,6 +94,50 @@ export function EMDRProcessor() {
   const [visualIntensity, setVisualIntensity] = useState(0.8); // Default 80%
   const [targetMovementPattern, setTargetMovementPattern] = useState<'ping-pong' | 'sine'>('ping-pong');
   
+  // Draw visual target helper function
+  const drawVisualTarget = useCallback(() => {
+    if (!canvasRef.current) return;
+    
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    // Clear the canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Calculate center position
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+    
+    // Apply visual intensity to color
+    const color = targetColor;
+    ctx.fillStyle = color;
+    
+    // Set up shadow/glow if enabled
+    if (targetHasGlow) {
+      ctx.shadowBlur = targetSize * 0.5;
+      ctx.shadowColor = color;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 0;
+    } else {
+      ctx.shadowBlur = 0;
+    }
+    
+    // Draw shape based on targetShape
+    if (targetShape === 'circle') {
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, targetSize / 2, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // Square
+      const halfSize = targetSize / 2;
+      ctx.fillRect(centerX - halfSize, centerY - halfSize, targetSize, targetSize);
+    }
+    
+    // Reset shadow
+    ctx.shadowBlur = 0;
+  }, [targetSize, targetColor, targetShape, targetHasGlow]);
+
   // Initialize canvas when component mounts
   useEffect(() => {
     if (canvasRef.current && !canvasSizedRef.current) {
@@ -108,7 +147,7 @@ export function EMDRProcessor() {
       canvasSizedRef.current = true;
       drawVisualTarget();
     }
-  }, []);
+  }, [drawVisualTarget]);
   
   // Initialize Audio Engine
   useEffect(() => {
@@ -147,7 +186,7 @@ export function EMDRProcessor() {
         audioEngineRef.current = null;
       }
     };
-  }, []);
+  }, [audioMode, contactSoundConfig]);
   
   // Sync configurations with audio engine when they change
   useEffect(() => {
@@ -177,7 +216,7 @@ export function EMDRProcessor() {
       // Update accessibility message
       setA11yMessage(`Audio mode changed to ${audioMode === 'track' ? 'audio track' : 'click'}`);
     }
-  }, [audioMode, isPlaying]);
+  }, [audioMode, isPlaying, setA11yMessage]);
   
   // Load audio metadata on mount
   useEffect(() => {
@@ -274,50 +313,6 @@ export function EMDRProcessor() {
       localStorage.setItem('selectedAudio', JSON.stringify(selectedAudio));
     }
   }, [selectedAudio]);
-  
-  // Draw visual target (non-animated state)
-  const drawVisualTarget = useCallback(() => {
-    if (!canvasRef.current) return;
-    
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    
-    // Clear the canvas
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    // Calculate center position
-    const centerX = canvas.width / 2;
-    const centerY = canvas.height / 2;
-    
-    // Apply visual intensity to color
-    const color = targetColor;
-    ctx.fillStyle = color;
-    
-    // Set up shadow/glow if enabled
-    if (targetHasGlow) {
-      ctx.shadowBlur = targetSize * 0.5;
-      ctx.shadowColor = color;
-      ctx.shadowOffsetX = 0;
-      ctx.shadowOffsetY = 0;
-    } else {
-      ctx.shadowBlur = 0;
-    }
-    
-    // Draw shape based on targetShape
-    if (targetShape === 'circle') {
-      ctx.beginPath();
-      ctx.arc(centerX, centerY, targetSize / 2, 0, Math.PI * 2);
-      ctx.fill();
-    } else {
-      // Square
-      const halfSize = targetSize / 2;
-      ctx.fillRect(centerX - halfSize, centerY - halfSize, targetSize, targetSize);
-    }
-    
-    // Reset shadow
-    ctx.shadowBlur = 0;
-  }, [targetSize, targetColor, targetShape, targetHasGlow]);
   
   // Setup canvas and handle resize
   useEffect(() => {

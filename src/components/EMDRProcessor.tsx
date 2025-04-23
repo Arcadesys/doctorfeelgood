@@ -91,6 +91,14 @@ export function EMDRProcessor() {
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   
+  // Visual settings state
+  const [targetSize, setTargetSize] = useState(50); // Default size in pixels
+  const [targetColor, setTargetColor] = useState('#ff0000'); // Default red
+  const [targetShape, setTargetShape] = useState<'circle' | 'square'>('circle');
+  const [targetHasGlow, setTargetHasGlow] = useState(true);
+  const [visualIntensity, setVisualIntensity] = useState(0.8); // Default 80%
+  const [targetMovementPattern, setTargetMovementPattern] = useState<'ping-pong' | 'sine'>('ping-pong');
+  
   // Initialize canvas when component mounts
   useEffect(() => {
     if (canvasRef.current && !canvasSizedRef.current) {
@@ -271,22 +279,45 @@ export function EMDRProcessor() {
   const drawVisualTarget = useCallback(() => {
     if (!canvasRef.current) return;
     
-    const ctx = canvasRef.current.getContext('2d');
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
     if (!ctx) return;
     
-    // Clear canvas
-    ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+    // Clear the canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    // Only draw if not playing (static state)
-    if (!isPlaying) {
-      // Draw static ball in the center
-      ctx.beginPath();
-      ctx.arc(window.innerWidth / 2, window.innerHeight / 2, 20, 0, Math.PI * 2);
-      ctx.fillStyle = isDarkMode ? '#6b7280' : '#374151'; // Gray for dark mode, darker gray for light mode
-      ctx.fill();
-      ctx.closePath();
+    // Calculate center position
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+    
+    // Apply visual intensity to color
+    const color = targetColor;
+    ctx.fillStyle = color;
+    
+    // Set up shadow/glow if enabled
+    if (targetHasGlow) {
+      ctx.shadowBlur = targetSize * 0.5;
+      ctx.shadowColor = color;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 0;
+    } else {
+      ctx.shadowBlur = 0;
     }
-  }, [isPlaying, isDarkMode]);
+    
+    // Draw shape based on targetShape
+    if (targetShape === 'circle') {
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, targetSize / 2, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // Square
+      const halfSize = targetSize / 2;
+      ctx.fillRect(centerX - halfSize, centerY - halfSize, targetSize, targetSize);
+    }
+    
+    // Reset shadow
+    ctx.shadowBlur = 0;
+  }, [targetSize, targetColor, targetShape, targetHasGlow]);
   
   // Setup canvas and handle resize
   useEffect(() => {
@@ -315,58 +346,67 @@ export function EMDRProcessor() {
     };
   }, [drawVisualTarget]); // Use drawVisualTarget as dependency (which internally depends on isPlaying)
   
-  // Set up audio context for panning
+  // Set up audio context and connections
   useEffect(() => {
-    // Clean up previous audio context
-    if (audioContextRef.current.context) {
-      return;
-    }
-    
-    // Create new audio context
-    try {
-      const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-      const context = new AudioContext();
-      const gainNode = context.createGain();
-      const panner = context.createStereoPanner();
-      
-      gainNode.connect(panner);
-      panner.connect(context.destination);
-      
-      audioContextRef.current = {
-        context,
-        source: null,
-        panner,
-        gainNode
-      };
-      
-      console.log('Audio context created successfully');
-    } catch (error) {
-      console.error('Failed to create audio context:', error);
-    }
-    
-    // Clean up on component unmount
-    return () => {
-      if (audioContextRef.current.context) {
-        audioContextRef.current.context.close();
+    let cleanupFunction: (() => void) | undefined;
+
+    const initializeAudio = () => {
+      try {
+        // Create new audio context if needed
+        if (!audioContextRef.current.context) {
+          const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+          const context = new AudioContext();
+          const gainNode = context.createGain();
+          const panner = context.createStereoPanner();
+          
+          gainNode.connect(panner);
+          panner.connect(context.destination);
+          
+          audioContextRef.current = {
+            context,
+            source: null,
+            panner,
+            gainNode
+          };
+          
+          console.log('Audio context created successfully');
+        }
+
+        // Create and connect source if needed
+        if (audioPlayerRef.current && audioContextRef.current.context && !audioContextRef.current.source) {
+          const source = audioContextRef.current.context.createMediaElementSource(audioPlayerRef.current);
+          source.connect(audioContextRef.current.gainNode!);
+          audioContextRef.current.source = source;
+          console.log('Audio source connected to context');
+        }
+
+        // Set up cleanup function
+        cleanupFunction = () => {
+          const ctx = audioContextRef.current.context;
+          if (ctx && ctx.state !== 'closed') {
+            ctx.close();
+            audioContextRef.current = {
+              context: null,
+              source: null,
+              panner: null,
+              gainNode: null
+            };
+          }
+        };
+      } catch (error) {
+        console.error('Failed to initialize audio:', error);
       }
     };
-  }, []);
-  
-  // Connect audio element to audio context when it's available
-  useEffect(() => {
-    if (!audioPlayerRef.current || !audioContextRef.current.context || audioContextRef.current.source) {
-      return;
-    }
-    
-    try {
-      const source = audioContextRef.current.context.createMediaElementSource(audioPlayerRef.current);
-      source.connect(audioContextRef.current.gainNode!);
-      audioContextRef.current.source = source;
-      console.log('Audio source connected to context');
-    } catch (error) {
-      console.error('Failed to connect audio to context:', error);
-    }
-  }, [isPlaying]);
+
+    initializeAudio();
+
+    // Return cleanup function
+    return () => {
+      if (cleanupFunction) {
+        cleanupFunction();
+      }
+    };
+  }, []); // Only run once on mount
   
   // Update audio pan value when it changes
   useEffect(() => {
@@ -394,78 +434,71 @@ export function EMDRProcessor() {
       const minX = ballRadius;
       const startTime = Date.now();
       
-      const animate = () => {
-        if (!canvasRef.current) {
-          console.log("Canvas ref is null during animation");
-          return;
-        }
+      const animate = useCallback((timestamp: number) => {
+        if (!canvasRef.current) return;
         
-        const ctx = canvasRef.current.getContext('2d');
-        if (!ctx) {
-          console.log("Could not get 2d context");
-          return;
-        }
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
         
         // Clear canvas
-        ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
         
-        // Calculate position based on time and BPM
-        const cycleTimeInSeconds = 60 / bpm; // Time for one complete cycle in seconds
-        const elapsedTime = (Date.now() - startTime) / 1000;
-        const positionInCycle = (elapsedTime % cycleTimeInSeconds) / cycleTimeInSeconds;
+        // Calculate position based on movement pattern
+        const cycleTime = 60000 / bpm; // Time for one complete cycle in ms
+        const progress = (timestamp % cycleTime) / cycleTime;
         
-        // Convert to a sine wave position -1 to 1
-        const sineValue = Math.sin(positionInCycle * Math.PI * 2);
-        
-        // Scale based on canvas width and pan width setting
-        const centerX = window.innerWidth / 2;
-        const fullAmplitude = (maxX - minX) / 2 - ballRadius;
-        const maxAmplitude = fullAmplitude * (panWidthPercent / 100);
-        
-        // Calculate new x position
-        x = centerX + (sineValue * maxAmplitude);
-        
-        // Calculate normalized position for panning (-1 to 1)
-        const normalizedX = sineValue * (panWidthPercent / 100);
-        setPanValue(normalizedX);
-        
-        // Update audio engine panning
-        if (audioEngineRef.current) {
-          audioEngineRef.current.setPan(normalizedX);
+        let x;
+        if (targetMovementPattern === 'ping-pong') {
+          // Ping-pong pattern
+          const normalizedProgress = progress < 0.5 ? progress * 2 : 2 - (progress * 2);
+          x = canvas.width * 0.1 + (canvas.width * 0.8 * normalizedProgress);
+        } else {
+          // Sine pattern
+          const amplitude = canvas.width * 0.4; // 40% of screen width
+          const frequency = 2 * Math.PI; // One complete sine wave per cycle
+          x = (canvas.width / 2) + amplitude * Math.sin(frequency * progress);
         }
         
-        // Check peaks for contact sounds
-        const peakThreshold = 0.98;
-        const now = Date.now();
-        const minTimeBetweenTriggers = 200;
+        const y = canvas.height / 2;
         
-        if (Math.abs(sineValue) >= peakThreshold) {
-          const isRightPeak = sineValue > 0;
-          const currentSide = isRightPeak ? 'right' : 'left';
-          
-          if (
-            now - lastTriggerTimeRef.current >= minTimeBetweenTriggers &&
-            lastTriggerSideRef.current !== currentSide
-          ) {
-            if (audioEngineRef.current) {
-              audioEngineRef.current.playContactSound(!isRightPeak);
-              lastTriggerTimeRef.current = now;
-              lastTriggerSideRef.current = currentSide;
-            }
-          }
-        } else if (Math.abs(sineValue) < 0.5) {
-          lastTriggerSideRef.current = null;
+        // Apply visual intensity to color
+        const color = targetColor;
+        ctx.fillStyle = color;
+        
+        // Set up shadow/glow if enabled
+        if (targetHasGlow) {
+          ctx.shadowBlur = targetSize * 0.5;
+          ctx.shadowColor = color;
+          ctx.shadowOffsetX = 0;
+          ctx.shadowOffsetY = 0;
+        } else {
+          ctx.shadowBlur = 0;
         }
         
-        // Draw ball
-        ctx.beginPath();
-        ctx.arc(x, window.innerHeight / 2, ballRadius, 0, Math.PI * 2);
-        ctx.fillStyle = isDarkMode ? '#3b82f6' : '#1d4ed8';
-        ctx.fill();
-        ctx.closePath();
+        // Draw shape based on targetShape
+        if (targetShape === 'circle') {
+          ctx.beginPath();
+          ctx.arc(x, y, targetSize / 2, 0, Math.PI * 2);
+          ctx.fill();
+        } else {
+          // Square
+          const halfSize = targetSize / 2;
+          ctx.fillRect(x - halfSize, y - halfSize, targetSize, targetSize);
+        }
         
-        animationIdRef.current = requestAnimationFrame(animate);
-      };
+        // Reset shadow
+        ctx.shadowBlur = 0;
+        
+        // Update pan value for audio
+        const normalizedPan = ((x / canvas.width) * 2) - 1;
+        setPanValue(normalizedPan);
+        
+        // Request next frame if still playing
+        if (isPlaying) {
+          animationIdRef.current = requestAnimationFrame(animate);
+        }
+      }, [isPlaying, bpm, targetSize, targetColor, targetShape, targetHasGlow, targetMovementPattern]);
       
       animationIdRef.current = requestAnimationFrame(animate);
       setAnimationFrameId(animationIdRef.current);
@@ -1009,118 +1042,92 @@ export function EMDRProcessor() {
         setSessionDuration(value as number);
         setTimeRemaining((value as number) * 60);
         break;
-      // Add other cases as needed
+      case 'targetSize':
+        setTargetSize(value as number);
+        drawVisualTarget(); // Redraw with new size
+        break;
+      case 'targetColor':
+        setTargetColor(value as string);
+        drawVisualTarget(); // Redraw with new color
+        break;
+      case 'targetShape':
+        setTargetShape(value as 'circle' | 'square');
+        drawVisualTarget(); // Redraw with new shape
+        break;
+      case 'targetHasGlow':
+        setTargetHasGlow(value as boolean);
+        drawVisualTarget(); // Redraw with updated glow effect
+        break;
+      case 'visualIntensity':
+        setVisualIntensity(value as number);
+        drawVisualTarget(); // Redraw with new intensity
+        break;
+      case 'targetMovementPattern':
+        setTargetMovementPattern(value as 'ping-pong' | 'sine');
+        // Pattern will be applied on next animation frame
+        break;
     }
   };
 
   return (
-    <div className={`flex flex-col items-center justify-center min-h-screen ${isDarkMode ? 'bg-gray-900' : 'bg-white'} p-4 relative`}>
-      {/* Audio elements for sound effects and playback */}
-      <audio ref={menuOpenSoundRef} src="/sounds/menu-open.mp3" preload="auto" />
-      <audio ref={menuCloseSoundRef} src="/sounds/menu-close.mp3" preload="auto" />
-      <audio ref={playStatusSoundRef} src="/sounds/status-change.mp3" preload="auto" />
-      <audio 
-        ref={audioPlayerRef}
-        loop={true} 
-        onPlay={() => {
-          console.log("Audio play event triggered");
-          setIsPlaying(true);
-        }}
-        onPause={() => {
-          console.log("Audio pause event triggered");
-          setIsPlaying(false);
-        }}
-        onEnded={() => {
-          console.log("Audio ended event triggered");
-          // Don't stop the animation if the audio is set to loop
-          if (audioPlayerRef.current && !audioPlayerRef.current.loop) {
-          setIsPlaying(false);
-          setA11yMessage('Audio ended. Visual target stopped.');
-          }
-        }}
-        onError={(e) => {
-          console.error("Audio error:", audioPlayerRef.current?.error);
-          // Try to recover from error by reloading the audio
-          if (audioPlayerRef.current && selectedAudio) {
-            console.log("Attempting to recover from audio error");
-            audioPlayerRef.current.load();
-            audioPlayerRef.current.play().catch(err => {
-              console.error("Recovery failed:", err);
-          setIsPlaying(false);
-          setA11yMessage('Error playing audio. Visual target stopped.');
-            });
-          } else {
-            setIsPlaying(false);
-            setA11yMessage('Error playing audio. Visual target stopped.');
-          }
-        }}
-      >
-        {/* Provide explicit source with type for better browser compatibility */}
-        <source src="/audio/sine-440hz.mp3" type="audio/mpeg" />
-        Your browser does not support the audio element.
-      </audio>
+    <div className="relative min-h-screen">
+      {/* Background layer */}
+      <div className={`fixed inset-0 ${isDarkMode ? 'bg-gray-900' : 'bg-white'}`} />
       
-      {/* Hamburger Menu Button */}
-      <button 
-        className={`absolute top-4 left-4 ${isDarkMode ? 'text-white' : 'text-gray-800'} z-20`}
-        onClick={toggleMenu}
-        aria-label="Toggle menu"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <line x1="3" y1="12" x2="21" y2="12"></line>
-          <line x1="3" y1="6" x2="21" y2="6"></line>
-          <line x1="3" y1="18" x2="21" y2="18"></line>
-        </svg>
-      </button>
-
-      {/* Replace the old menu with UnifiedSettings */}
-      <UnifiedSettings
-        isOpen={isMenuOpen}
-        onClose={() => setIsMenuOpen(false)}
-        isSessionActive={isPlaying}
-        settings={currentSettings}
-        onSettingChange={handleSettingChange}
-      />
-
-      {/* Main Content with Canvas */}
-      <h1 className={`text-3xl font-bold mb-6 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>EMDR Therapy</h1>
-      
-      {/* Full viewport canvas for visual target */}
+      {/* Canvas layer */}
       <canvas 
         ref={canvasRef}
-        className={`fixed top-0 left-0 w-screen h-screen ${isDarkMode ? 'bg-gray-900' : 'bg-white'} z-0`}
+        className="fixed inset-0 z-10"
         aria-label="EMDR visual target canvas"
         role="img"
         aria-live="polite"
         style={{ pointerEvents: 'none' }}
       />
-      
-      {/* Accessibility announcement for screen readers */}
-      <div className="sr-only" aria-live="polite">
-        {a11yMessage}
-      </div>
-      
-      {/* Minimalist Audio Player Controls */}
-      <div className={`fixed bottom-6 left-1/2 transform -translate-x-1/2 ${isDarkMode ? 'bg-gray-800' : 'bg-gray-200'} bg-opacity-80 p-4 rounded-full shadow-lg z-10`}>
-        {audioMode === 'click' ? (
-          <button
-            onClick={togglePlayPause}
-            className="bg-blue-600 hover:bg-blue-500 text-white rounded-full p-4 flex items-center justify-center"
-            aria-label={isPlaying ? "Pause" : "Play"}
+
+      {/* Content layer */}
+      <div className="relative z-20">
+        {/* Audio elements */}
+        <audio ref={menuOpenSoundRef} src="/sounds/menu-open.mp3" preload="auto" />
+        <audio ref={menuCloseSoundRef} src="/sounds/menu-close.mp3" preload="auto" />
+        <audio ref={playStatusSoundRef} src="/sounds/status-change.mp3" preload="auto" />
+        <audio ref={audioPlayerRef} loop={true}>
+          <source src="/audio/sine-440hz.mp3" type="audio/mpeg" />
+          Your browser does not support the audio element.
+        </audio>
+
+        {/* Header */}
+        <div className="flex justify-between items-center p-4">
+          <button 
+            className={`${isDarkMode ? 'text-white' : 'text-gray-800'}`}
+            onClick={toggleMenu}
+            aria-label="Toggle menu"
           >
-            {isPlaying ? (
-              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="6" y="4" width="4" height="16"></rect>
-                <rect x="14" y="4" width="4" height="16"></rect>
-              </svg>
-            ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polygon points="5 3 19 12 5 21 5 3"></polygon>
-              </svg>
-            )}
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="3" y1="12" x2="21" y2="12"></line>
+              <line x1="3" y1="6" x2="21" y2="6"></line>
+              <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
           </button>
-        ) : selectedAudio ? (
-          <div className="flex items-center gap-4">
+          
+          <h1 className={`text-3xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+            EMDR Therapy
+          </h1>
+          
+          <div className="w-10" /> {/* Spacer for centering */}
+        </div>
+
+        {/* Settings Menu - z-30 to be above everything */}
+        <UnifiedSettings
+          isOpen={isMenuOpen}
+          onClose={() => setIsMenuOpen(false)}
+          isSessionActive={isPlaying}
+          settings={currentSettings}
+          onSettingChange={handleSettingChange}
+        />
+
+        {/* Controls - z-20 to be above canvas but below menu */}
+        <div className={`fixed bottom-6 left-1/2 transform -translate-x-1/2 ${isDarkMode ? 'bg-gray-800' : 'bg-gray-200'} bg-opacity-80 p-4 rounded-full shadow-lg`}>
+          {audioMode === 'click' ? (
             <button
               onClick={togglePlayPause}
               className="bg-blue-600 hover:bg-blue-500 text-white rounded-full p-4 flex items-center justify-center"
@@ -1137,33 +1144,57 @@ export function EMDRProcessor() {
                 </svg>
               )}
             </button>
-            
-            <div className={`${isDarkMode ? 'text-white' : 'text-gray-900'} text-center`}>
-              <div className="font-medium">{selectedAudio.name}</div>
+          ) : selectedAudio ? (
+            <div className="flex items-center gap-4">
+              <button
+                onClick={togglePlayPause}
+                className="bg-blue-600 hover:bg-blue-500 text-white rounded-full p-4 flex items-center justify-center"
+                aria-label={isPlaying ? "Pause" : "Play"}
+              >
+                {isPlaying ? (
+                  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="6" y="4" width="4" height="16"></rect>
+                    <rect x="14" y="4" width="4" height="16"></rect>
+                  </svg>
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                  </svg>
+                )}
+              </button>
+              
+              <div className={`${isDarkMode ? 'text-white' : 'text-gray-900'} text-center`}>
+                <div className="font-medium">{selectedAudio.name}</div>
+              </div>
             </div>
-          </div>
-        ) : (
-          <button 
-            onClick={toggleMenu}
-            className="bg-blue-600 hover:bg-blue-500 text-white py-3 px-6 rounded-lg flex items-center justify-center"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2">
-              <path d="M3 18v-6a9 9 0 0 1 18 0v6"></path>
-              <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"></path>
-            </svg>
-            Select Audio
-          </button>
-        )}
-      </div>
-
-      {/* Session Timer Display */}
-      {timeRemaining !== null && (
-        <div className={`fixed top-6 left-1/2 transform -translate-x-1/2 ${
-          isDarkMode ? 'bg-gray-800 text-white' : 'bg-gray-200 text-gray-900'
-        } px-6 py-3 rounded-full text-2xl font-bold z-20`}>
-          {formatTime(timeRemaining)}
+          ) : (
+            <button 
+              onClick={toggleMenu}
+              className="bg-blue-600 hover:bg-blue-500 text-white py-3 px-6 rounded-lg flex items-center justify-center"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2">
+                <path d="M3 18v-6a9 9 0 0 1 18 0v6"></path>
+                <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"></path>
+              </svg>
+              Select Audio
+            </button>
+          )}
         </div>
-      )}
+
+        {/* Session Timer Display */}
+        {timeRemaining !== null && (
+          <div className={`fixed top-6 left-1/2 transform -translate-x-1/2 ${
+            isDarkMode ? 'bg-gray-800 text-white' : 'bg-gray-200 text-gray-900'
+          } px-6 py-3 rounded-full text-2xl font-bold z-20`}>
+            {formatTime(timeRemaining)}
+          </div>
+        )}
+
+        {/* Screen reader announcements */}
+        <div className="sr-only" aria-live="polite">
+          {a11yMessage}
+        </div>
+      </div>
     </div>
   );
 } 

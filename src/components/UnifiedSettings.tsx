@@ -65,7 +65,7 @@ const UnifiedSettings: React.FC<UnifiedSettingsProps> = ({
             initial={{ opacity: 0 }}
             animate={{ opacity: 0.5 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black z-30"
+            className="fixed inset-0 bg-black z-50"
             onClick={onClose}
             aria-hidden="true"
           />
@@ -76,7 +76,7 @@ const UnifiedSettings: React.FC<UnifiedSettingsProps> = ({
             animate="open"
             exit="closed"
             variants={drawerVariants}
-            className="fixed left-0 top-0 h-full w-full sm:w-96 bg-gray-900 text-white shadow-xl z-40 overflow-y-auto"
+            className="fixed left-0 top-0 h-full w-full sm:w-96 bg-gray-900 text-white shadow-xl z-51 overflow-y-auto"
             role="dialog"
             aria-modal="true"
             aria-label="Settings menu"
@@ -139,14 +139,14 @@ const UnifiedSettings: React.FC<UnifiedSettingsProps> = ({
                       </span>
                       <button
                         onClick={() => onSettingChange('isDarkMode', !settings.isDarkMode)}
-                        className={`w-12 h-6 transition-colors duration-200 ease-in-out rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                        className={`relative w-12 h-6 transition-colors duration-200 ease-in-out rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                           settings.isDarkMode ? 'bg-blue-600' : 'bg-gray-600'
                         }`}
                         role="switch"
                         aria-checked={settings.isDarkMode}
                       >
                         <span
-                          className={`inline-block w-5 h-5 transition-transform duration-200 ease-in-out transform bg-white rounded-full ${
+                          className={`absolute left-0 inline-block w-5 h-5 transition-transform duration-200 ease-in-out transform bg-white rounded-full ${
                             settings.isDarkMode ? 'translate-x-6' : 'translate-x-1'
                           }`}
                         />
@@ -219,7 +219,7 @@ const UnifiedSettings: React.FC<UnifiedSettingsProps> = ({
                         <label htmlFor="targetHasGlow" className="text-sm">Glow Effect</label>
                         <button
                           onClick={() => onSettingChange('targetHasGlow', !settings.targetHasGlow)}
-                          className={`w-12 h-6 transition-colors duration-200 ease-in-out rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                          className={`relative w-12 h-6 transition-colors duration-200 ease-in-out rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                             settings.targetHasGlow ? 'bg-blue-600' : 'bg-gray-600'
                           }`}
                           role="switch"
@@ -227,11 +227,44 @@ const UnifiedSettings: React.FC<UnifiedSettingsProps> = ({
                           disabled={isSessionActive}
                         >
                           <span
-                            className={`inline-block w-5 h-5 transition-transform duration-200 ease-in-out transform bg-white rounded-full ${
+                            className={`absolute left-0 inline-block w-5 h-5 transition-transform duration-200 ease-in-out transform bg-white rounded-full ${
                               settings.targetHasGlow ? 'translate-x-6' : 'translate-x-1'
                             }`}
                           />
                         </button>
+                      </div>
+
+                      <div>
+                        <label htmlFor="visualIntensity" className="block mb-2 text-sm">
+                          Visual Intensity: <span className="font-mono bg-gray-700 px-2 py-1 rounded ml-2">{Math.round(settings.visualIntensity * 100)}%</span>
+                        </label>
+                        <input
+                          id="visualIntensity"
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.1"
+                          value={settings.visualIntensity}
+                          onChange={(e) => onSettingChange('visualIntensity', Number(e.target.value))}
+                          className="w-full"
+                          disabled={isSessionActive}
+                          aria-label="Visual intensity percentage"
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="targetMovementPattern" className="block mb-2 text-sm">Movement Pattern</label>
+                        <select
+                          id="targetMovementPattern"
+                          value={settings.targetMovementPattern}
+                          onChange={(e) => onSettingChange('targetMovementPattern', e.target.value)}
+                          className="w-full p-2 rounded bg-gray-700 border-gray-600"
+                          disabled={isSessionActive}
+                          aria-label="Target movement pattern"
+                        >
+                          <option value="ping-pong">Ping Pong</option>
+                          <option value="sine">Sine Wave</option>
+                        </select>
                       </div>
                     </div>
                   </section>

@@ -176,8 +176,6 @@ const EMDRSession: React.FC<EMDRSessionProps> = ({
     <div className={`min-h-screen ${isDarkMode ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'}`}>
       <div className="p-6 max-w-5xl mx-auto">
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold">EMDR Therapy Session</h1>
-          
           <button
             onClick={() => setIsSettingsOpen(true)}
             className={`p-2 rounded-lg transition-colors ${
@@ -191,69 +189,11 @@ const EMDRSession: React.FC<EMDRSessionProps> = ({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
+          
+          <h1 className="text-2xl font-bold">EMDR Therapy Session</h1>
+          
+          {/* Empty div to maintain flex spacing */}
+          <div className="w-8"></div>
         </div>
         
-        <div className={`p-6 rounded-lg shadow-md ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
-          <div className="mb-6">
-            <EMDRTarget 
-              isActive={isActive} 
-              speed={speed} 
-              size={targetSize} 
-              color={targetColor}
-              shape={targetShape}
-              hasGlow={targetHasGlow}
-              movementPattern={targetMovementPattern}
-              intensity={visualIntensity}
-            />
-          </div>
-          
-          <div className="mb-6">
-            <SessionTimer 
-              isActive={isActive}
-              onTimerComplete={handleTimerComplete}
-              defaultDuration={sessionDuration}
-            />
-          </div>
-
-          <div className="flex justify-center items-center mb-4">
-            <label className={`flex items-center gap-2 cursor-pointer ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-              <input
-                type="checkbox"
-                checked={useConstantPanning}
-                onChange={() => setUseConstantPanning(!useConstantPanning)}
-                disabled={isActive}
-                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
-              <span className="text-sm font-medium">Use constant panning</span>
-            </label>
-          </div>
-          
-          <div className="flex justify-center mt-8">
-            <button
-              onClick={isActive ? stopSession : startSession}
-              className={`px-8 py-4 rounded-lg font-medium text-xl focus:outline-none focus:ring-2 focus:ring-offset-2 ${
-                isActive 
-                  ? 'bg-red-500 hover:bg-red-600 focus:ring-red-500 text-white' 
-                  : 'bg-green-500 hover:bg-green-600 focus:ring-green-500 text-white'
-              }`}
-              aria-label={isActive ? "Stop EMDR session" : "Start EMDR session"}
-            >
-              {isActive ? 'Stop' : 'Start'} Session
-            </button>
-          </div>
-        </div>
-        
-        {/* Unified Settings */}
-        <UnifiedSettings
-          isOpen={isSettingsOpen}
-          onClose={() => setIsSettingsOpen(false)}
-          isSessionActive={isActive}
-          settings={currentSettings}
-          onSettingChange={handleSettingChange}
-        />
-      </div>
-    </div>
-  );
-};
-
-export default EMDRSession; 
+        <div className={`

@@ -26,6 +26,10 @@ export class AudioEngine {
   private currentMode: AudioMode = 'click';
   private audioElementConnected = false;
   
+  // Oscillators for frequency control
+  private oscillator: OscillatorNode | null = null;
+  private oscillatorRight: OscillatorNode | null = null;
+  
   // Sample buffers for contact sounds
   private leftClickBuffer: AudioBuffer | null = null;
   private rightClickBuffer: AudioBuffer | null = null;
@@ -315,6 +319,22 @@ export class AudioEngine {
   public setPan(value: number): void {
     if (this.pannerNode) {
       this.pannerNode.pan.setValueAtTime(value, this.context?.currentTime ?? 0);
+    }
+  }
+
+  // Update frequencies for the audio engine
+  public updateFrequencies(leftFreq: number, rightFreq: number): void {
+    // Update the frequencies in the audio engine
+    if (this.context) {
+      // If we have an active oscillator, update its frequency
+      if (this.oscillator) {
+        this.oscillator.frequency.value = leftFreq;
+      }
+      
+      // If we have a second oscillator for stereo, update its frequency
+      if (this.oscillatorRight) {
+        this.oscillatorRight.frequency.value = rightFreq;
+      }
     }
   }
 } 

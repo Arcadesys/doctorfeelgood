@@ -51,6 +51,21 @@ export default function EMDRProcessor() {
   const [selectedAudio, setSelectedAudio] = useState<AudioFile | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [animationFrameId, setAnimationFrameId] = useState<number | null>(null);
+  
+  // Visual settings
+  const [targetSize, setTargetSize] = useState(50);
+  const [visualIntensity, setVisualIntensity] = useState(1);
+  const [targetColor, setTargetColor] = useState('#ffffff');
+  const [targetShape, setTargetShape] = useState<'circle' | 'square'>('circle');
+  const [targetHasGlow, setTargetHasGlow] = useState(true);
+  const [targetMovementPattern, setTargetMovementPattern] = useState<'ping-pong' | 'sine'>('ping-pong');
+  
+  // Audio settings
+  const [speed, setSpeed] = useState(1000);
+  const [freqLeft, setFreqLeft] = useState(440);
+  const [freqRight, setFreqRight] = useState(480);
+  
+  // Audio track config
   const [audioTrackConfig, setAudioTrackConfig] = useState<EMDRTrackConfig>({
     bpm: 60,
     sessionDuration: 300,
@@ -89,13 +104,6 @@ export default function EMDRProcessor() {
   const menuCloseSoundRef = useRef<HTMLAudioElement>(null);
   const audioPlayerRef = useRef<HTMLAudioElement>(null);
   const playStatusSoundRef = useRef<HTMLAudioElement>(null);
-  
-  // Visual settings state
-  const [targetSize] = useState(50);
-  const [targetColor] = useState('#ffffff');
-  const [targetShape] = useState<'circle' | 'square'>('circle');
-  const [targetHasGlow] = useState(true);
-  const [targetMovementPattern] = useState<'ping-pong' | 'sine'>('ping-pong');
   
   // Refs
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -341,8 +349,8 @@ export default function EMDRProcessor() {
     };
   }, [drawVisualTarget]); // Use drawVisualTarget as dependency (which internally depends on isPlaying)
   
-  // Initialize audio context
-  useEffect(() => {
+  // Initialize audio context on first user interaction
+  const initializeAudio = useCallback(async () => {
     if (!audioContextRef.current.context) {
       try {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -363,25 +371,42 @@ export default function EMDRProcessor() {
           gainNode
         };
         
+        // Initialize audio engine after context is created
+        if (audioPlayerRef.current) {
+          const audioEngine = new AudioEngine();
+          const success = await audioEngine.initialize(audioPlayerRef.current);
+          
+          if (success) {
+            audioEngine.updateContactSoundConfig(contactSoundConfig);
+            audioEngine.setAudioMode(audioMode);
+            audioEngineRef.current = audioEngine;
+          }
+        }
+        
         console.log('Audio context created successfully');
       } catch (error) {
         console.error('Failed to create audio context:', error);
       }
     }
+  }, [audioMode, contactSoundConfig]);
 
+  // Handle first user interaction
+  const handleFirstInteraction = useCallback(() => {
+    initializeAudio();
+    // Remove the event listener after first interaction
+    document.removeEventListener('click', handleFirstInteraction);
+    document.removeEventListener('keydown', handleFirstInteraction);
+  }, [initializeAudio]);
+
+  // Add event listeners for first interaction
+  useEffect(() => {
+    document.addEventListener('click', handleFirstInteraction);
+    document.addEventListener('keydown', handleFirstInteraction);
     return () => {
-      const ctx = audioContextRef.current.context;
-      if (ctx && ctx.state !== 'closed') {
-        ctx.close();
-        audioContextRef.current = {
-          context: null,
-          source: null,
-          panner: null,
-          gainNode: null
-        };
-      }
+      document.removeEventListener('click', handleFirstInteraction);
+      document.removeEventListener('keydown', handleFirstInteraction);
     };
-  }, []); // Only run once on mount
+  }, [handleFirstInteraction]);
 
   // Connect audio element to context
   useEffect(() => {
@@ -409,12 +434,15 @@ export default function EMDRProcessor() {
   // Draw target helper function
   const drawTarget = useCallback((ctx: CanvasRenderingContext2D, x: number, y: number) => {
     // Apply visual intensity to color
-    ctx.fillStyle = targetColor;
+    const color = targetColor;
+    const opacity = 0.3 + (visualIntensity * 0.7); // Ensure minimum visibility of 30%
+    ctx.fillStyle = color;
+    ctx.globalAlpha = opacity;
     
     // Set up shadow/glow if enabled
     if (targetHasGlow) {
       ctx.shadowBlur = targetSize * 0.5;
-      ctx.shadowColor = targetColor;
+      ctx.shadowColor = color;
       ctx.shadowOffsetX = 0;
       ctx.shadowOffsetY = 0;
     } else {
@@ -432,9 +460,10 @@ export default function EMDRProcessor() {
       ctx.fillRect(x - halfSize, y - halfSize, targetSize, targetSize);
     }
     
-    // Reset shadow
+    // Reset shadow and opacity
     ctx.shadowBlur = 0;
-  }, [targetColor, targetHasGlow, targetShape, targetSize]);
+    ctx.globalAlpha = 1;
+  }, [targetColor, targetHasGlow, targetShape, targetSize, visualIntensity]);
 
   // Animation function
   const animate = useCallback((timestamp: number) => {
@@ -447,9 +476,8 @@ export default function EMDRProcessor() {
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    // Calculate position based on movement pattern
-    const cycleTime = 60000 / audioTrackConfig.bpm; // Time for one complete cycle in ms
-    const progress = (timestamp % cycleTime) / cycleTime;
+    // Calculate position based on movement pattern and speed
+    const progress = (timestamp % speed) / speed;
     
     let x;
     if (targetMovementPattern === 'ping-pong') {
@@ -476,7 +504,7 @@ export default function EMDRProcessor() {
     if (isPlaying) {
       animationIdRef.current = requestAnimationFrame(animate);
     }
-  }, [isPlaying, audioTrackConfig.bpm, targetMovementPattern, drawTarget]);
+  }, [isPlaying, speed, targetMovementPattern, drawTarget]);
 
   // Animation control functions
   const startAnimation = useCallback(() => {
@@ -665,10 +693,47 @@ export default function EMDRProcessor() {
       case 'volume':
         setAudioTrackConfig(prev => ({ ...prev, volume: value as number }));
         break;
+      case 'targetSize':
+        setTargetSize(value as number);
+        break;
+      case 'visualIntensity':
+        setVisualIntensity(value as number);
+        break;
+      case 'targetColor':
+        setTargetColor(value as string);
+        break;
+      case 'targetShape':
+        setTargetShape(value as 'circle' | 'square');
+        break;
+      case 'targetHasGlow':
+        setTargetHasGlow(value as boolean);
+        break;
+      case 'targetMovementPattern':
+        setTargetMovementPattern(value as 'ping-pong' | 'sine');
+        break;
+      case 'isDarkMode':
+        setIsDarkMode(value as boolean);
+        break;
+      case 'speed':
+        setSpeed(value as number);
+        break;
+      case 'freqLeft':
+        setFreqLeft(value as number);
+        break;
+      case 'freqRight':
+        setFreqRight(value as number);
+        break;
       default:
         console.warn(`Unknown setting: ${setting}`);
     }
   };
+
+  // Update audio engine when frequencies change
+  useEffect(() => {
+    if (audioEngineRef.current) {
+      audioEngineRef.current.updateFrequencies(freqLeft, freqRight);
+    }
+  }, [freqLeft, freqRight]);
 
   return (
     <div className="relative min-h-screen">

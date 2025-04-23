@@ -21,28 +21,44 @@ class MockAudioContext {
   constructor() {
     this.state = 'suspended';
     this.destination = {};
+    this.sampleRate = 44100;
+    this.baseLatency = 0.005;
   }
   
   createGain() {
     return {
       connect: jest.fn(),
-      gain: { value: 1 },
+      disconnect: jest.fn(),
+      gain: { 
+        value: 1,
+        setValueAtTime: jest.fn(),
+        linearRampToValueAtTime: jest.fn()
+      },
     };
   }
   
   createStereoPanner() {
     return {
       connect: jest.fn(),
-      pan: { value: 0 },
+      disconnect: jest.fn(),
+      pan: { 
+        value: 0,
+        setValueAtTime: jest.fn()
+      },
     };
   }
   
   createOscillator() {
     return {
       connect: jest.fn(),
+      disconnect: jest.fn(),
       start: jest.fn(),
       stop: jest.fn(),
-      frequency: { value: 440 },
+      frequency: { 
+        value: 440,
+        setValueAtTime: jest.fn()
+      },
+      type: 'sine'
     };
   }
   
@@ -50,7 +66,22 @@ class MockAudioContext {
     return {
       connect: jest.fn(),
       disconnect: jest.fn(),
+      mediaElement: null
     };
+  }
+
+  async decodeAudioData(arrayBuffer) {
+    // Mock successful decode for valid audio files
+    if (arrayBuffer.byteLength > 0) {
+      return {
+        duration: 2.0,
+        numberOfChannels: 2,
+        sampleRate: 44100,
+        length: 88200,
+        getChannelData: () => new Float32Array(88200)
+      };
+    }
+    throw new Error('Invalid audio data');
   }
   
   resume() {

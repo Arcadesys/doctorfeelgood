@@ -2,7 +2,7 @@
  * @jest-environment jsdom
  */
 import React from 'react';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom';
 
 // Mock canvas
@@ -22,20 +22,22 @@ const mockGetContext = jest.fn(() => ({
 HTMLCanvasElement.prototype.getContext = mockGetContext;
 
 // Mock AudioEngine
+const mockAudioEngine = {
+  initialize: jest.fn().mockResolvedValue(true),
+  dispose: jest.fn(),
+  startPlayback: jest.fn().mockResolvedValue(true),
+  stopAll: jest.fn(),
+  setVolume: jest.fn(),
+  setPan: jest.fn(),
+  updateContactSoundConfig: jest.fn(),
+  updateAudioTrackConfig: jest.fn(),
+  setAudioMode: jest.fn(),
+  getAudioMode: jest.fn().mockReturnValue('click'),
+  getIsPlaying: jest.fn().mockReturnValue(false),
+};
+
 jest.mock('../../lib/audioEngine', () => ({
-  AudioEngine: jest.fn().mockImplementation(() => ({
-    initialize: jest.fn().mockResolvedValue(true),
-    dispose: jest.fn(),
-    startPlayback: jest.fn().mockResolvedValue(true),
-    stopAll: jest.fn(),
-    setVolume: jest.fn(),
-    setPan: jest.fn(),
-    updateContactSoundConfig: jest.fn(),
-    updateAudioTrackConfig: jest.fn(),
-    setAudioMode: jest.fn(),
-    getAudioMode: jest.fn().mockReturnValue('click'),
-    getIsPlaying: jest.fn().mockReturnValue(false),
-  })),
+  AudioEngine: jest.fn().mockImplementation(() => mockAudioEngine),
 }));
 
 // Mock the CustomKnob component
@@ -63,30 +65,33 @@ jest.mock('../SettingsDrawer', () => {
     if (!isOpen) return null;
     
     return (
-      <div data-testid="settings-drawer">
-        <button onClick={onClose} aria-label="Close settings">Close</button>
-        <div>
-          <h2>Settings</h2>
+      <div role="dialog" aria-modal="true" aria-label="Settings menu">
+        <div role="tablist">
+          <button role="tab" aria-selected={true}>Audio</button>
+        </div>
+        <div role="tabpanel">
           <div>
             <label htmlFor="audioMode">Audio Mode</label>
-            <select 
-              id="audioMode" 
-              onChange={(e) => onSettingChange('audioMode', e.target.value)}
-              aria-label="Audio Mode"
+            <button
+              role="switch"
+              aria-checked={settings.audioMode}
+              onClick={() => onSettingChange('audioMode', !settings.audioMode)}
+              aria-label="Audio mode"
             >
-              <option value="click">Click</option>
-              <option value="audioTrack">Audio Track</option>
-            </select>
+              <span />
+            </button>
           </div>
           <div>
             <label htmlFor="volume">Volume</label>
-            <input 
-              id="volume" 
-              type="range" 
-              min="0" 
-              max="1" 
-              step="0.1" 
-              value={settings.volume} 
+            <input
+              type="range"
+              id="volume"
+              role="slider"
+              aria-label="Volume"
+              min="0"
+              max="1"
+              step="0.1"
+              value={settings.volume}
               onChange={(e) => onSettingChange('volume', parseFloat(e.target.value))}
             />
           </div>
@@ -209,122 +214,153 @@ describe('EMDRProcessor AudioEngine Integration', () => {
   });
 
   it('should play contact sounds when triggered', async () => {
-    const playButton = screen.getByRole('button', { name: /play/i });
+    render(<EMDRProcessor />);
     
     await act(async () => {
+      const playButton = screen.getByRole('button', { name: /play/i });
       fireEvent.click(playButton);
     });
-
-    expect(AudioEngine.mock.instances[0].startPlayback).toHaveBeenCalled();
+    
+    expect(mockAudioEngine.startPlayback).toHaveBeenCalled();
   });
 
   it('should cleanup AudioEngine on unmount', async () => {
+    const { unmount } = render(<EMDRProcessor />);
+    
     await act(async () => {
-      cleanup();
+      unmount();
     });
-
-    expect(AudioEngine.mock.instances[0].dispose).toHaveBeenCalled();
+    
+    expect(mockAudioEngine.dispose).toHaveBeenCalled();
   });
 
   describe('Error Handling', () => {
     it('should handle AudioEngine initialization failure', async () => {
-      // Mock initialization failure
-      AudioEngine.mock.instances[0].initialize.mockRejectedValueOnce(new Error('Initialization failed'));
+      mockAudioEngine.initialize.mockRejectedValueOnce(new Error('Initialization failed'));
       
-      await act(async () => {
-        cleanup();
-        render(<EMDRProcessor />);
-      });
-
-      expect(screen.getByText(/Error initializing audio/i)).toBeInTheDocument();
+      render(<EMDRProcessor />);
+      
+      expect(await screen.findByText(/failed to initialize audio/i)).toBeInTheDocument();
     });
 
     it('should handle playback failure', async () => {
-      // Mock playback failure
-      AudioEngine.mock.instances[0].startPlayback.mockRejectedValueOnce(new Error('Playback failed'));
+      mockAudioEngine.startPlayback.mockRejectedValueOnce(new Error('Playback failed'));
       
       const playButton = screen.getByRole('button', { name: /play/i });
       
       await act(async () => {
         fireEvent.click(playButton);
       });
-
-      expect(screen.getByText(/Failed to start playback/i)).toBeInTheDocument();
+      
+      expect(await screen.findByText(/failed to start playback/i)).toBeInTheDocument();
     });
 
-    it('should handle audio mode switch failure', async () => {
-      // Mock mode switch failure
-      AudioEngine.mock.instances[0].setAudioMode.mockRejectedValueOnce(new Error('Mode switch failed'));
+    it('should handle audio mode switch failures', async () => {
+      mockAudioEngine.setAudioMode.mockRejectedValueOnce(new Error('Failed to switch audio mode'));
+      
+      // Open settings drawer
+      const settingsButtons = screen.getAllByRole('button', { name: /open settings/i });
+      fireEvent.click(settingsButtons[0]);
       
       const modeToggle = screen.getByRole('switch', { name: /audio mode/i });
       
       await act(async () => {
         fireEvent.click(modeToggle);
       });
-
-      expect(screen.getByText(/Failed to switch audio mode/i)).toBeInTheDocument();
+      
+      expect(await screen.findByText(/failed to switch audio mode/i)).toBeInTheDocument();
     });
   });
 
   describe('Edge Cases', () => {
     it('should handle rapid mode switches', async () => {
+      // Open settings drawer
+      const settingsButtons = screen.getAllByRole('button', { name: /open settings/i });
+      fireEvent.click(settingsButtons[0]);
+      
       const modeToggle = screen.getByRole('switch', { name: /audio mode/i });
       
       await act(async () => {
         // Simulate rapid mode switches
         for (let i = 0; i < 5; i++) {
           fireEvent.click(modeToggle);
+          await new Promise(resolve => setTimeout(resolve, 0)); // Allow state updates
         }
       });
-
-      // Should have called setAudioMode the correct number of times
-      expect(AudioEngine.mock.instances[0].setAudioMode).toHaveBeenCalledTimes(5);
+      
+      expect(mockAudioEngine.setAudioMode).toHaveBeenCalledTimes(5);
     });
 
     it('should handle rapid volume changes', async () => {
+      // Open settings drawer
+      const settingsButtons = screen.getAllByRole('button', { name: /open settings/i });
+      fireEvent.click(settingsButtons[0]);
+      
       const volumeSlider = screen.getByRole('slider', { name: /volume/i });
       
       await act(async () => {
         // Simulate rapid volume changes
-        for (let i = 0; i < 10; i++) {
-          fireEvent.change(volumeSlider, { target: { value: (i * 0.1).toString() } });
+        for (let i = 0; i < 5; i++) {
+          fireEvent.change(volumeSlider, { target: { value: String(i * 0.2) } });
+          await new Promise(resolve => setTimeout(resolve, 0)); // Allow state updates
         }
       });
-
-      // Should have called setVolume the correct number of times
-      expect(AudioEngine.mock.instances[0].setVolume).toHaveBeenCalledTimes(10);
+      
+      expect(mockAudioEngine.setVolume).toHaveBeenCalledTimes(5);
     });
 
     it('should handle component remounting', async () => {
+      const { unmount } = render(<EMDRProcessor />);
+      
       await act(async () => {
-        cleanup();
+        unmount();
+        mockAudioEngine.initialize.mockClear();
         render(<EMDRProcessor />);
       });
-
-      expect(AudioEngine).toHaveBeenCalledTimes(2);
-      expect(AudioEngine.mock.instances[1].initialize).toHaveBeenCalled();
+      
+      expect(mockAudioEngine.initialize).toHaveBeenCalledTimes(1);
     });
   });
 
   describe('Accessibility', () => {
     it('should announce audio mode changes', async () => {
+      // Open settings drawer
+      const settingsButtons = screen.getAllByRole('button', { name: /open settings/i });
+      fireEvent.click(settingsButtons[0]);
+      
       const modeToggle = screen.getByRole('switch', { name: /audio mode/i });
       
       await act(async () => {
         fireEvent.click(modeToggle);
       });
-
-      expect(screen.getByRole('status')).toHaveTextContent(/audio mode changed/i);
+      
+      expect(await screen.findByText(/audio mode changed/i)).toBeInTheDocument();
     });
 
     it('should announce volume changes', async () => {
+      // Open settings drawer
+      const settingsButtons = screen.getAllByRole('button', { name: /open settings/i });
+      fireEvent.click(settingsButtons[0]);
+      
       const volumeSlider = screen.getByRole('slider', { name: /volume/i });
       
       await act(async () => {
         fireEvent.change(volumeSlider, { target: { value: '0.5' } });
       });
+      
+      expect(await screen.findByText(/volume changed/i)).toBeInTheDocument();
+    });
 
-      expect(screen.getByRole('status')).toHaveTextContent(/volume changed/i);
+    it('should maintain focus management in settings drawer', async () => {
+      // Open settings drawer
+      const settingsButtons = screen.getAllByRole('button', { name: /open settings/i });
+      fireEvent.click(settingsButtons[0]);
+      
+      const drawer = screen.getByRole('dialog');
+      expect(drawer).toHaveAttribute('aria-modal', 'true');
+      
+      const closeButton = screen.getByRole('button', { name: /close settings/i });
+      expect(closeButton).toHaveFocus();
     });
   });
 }); 

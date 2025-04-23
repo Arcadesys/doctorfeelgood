@@ -68,6 +68,10 @@ export class AudioEngine {
       this.gainNode = this.audioContext.createGain();
       this.gainNode.connect(this.audioContext.destination);
 
+      // Load click samples
+      console.log('AudioEngine: Loading click samples');
+      await this.loadClickSamples();
+
       this.audioElement = audioElement;
 
       // Wait for the audio element to be ready
@@ -160,17 +164,24 @@ export class AudioEngine {
   
   // Load click samples
   private async loadClickSamples(): Promise<void> {
-    if (!this.audioContext) return;
+    if (!this.audioContext) {
+      console.warn('AudioEngine: Cannot load click samples - no audio context');
+      return;
+    }
     
     try {
+      console.log('AudioEngine: Fetching click samples from:', {
+        left: this.contactSoundConfig.leftSamplePath,
+        right: this.contactSoundConfig.rightSamplePath
+      });
+
       const [leftResponse, rightResponse] = await Promise.all([
         fetch(this.contactSoundConfig.leftSamplePath),
         fetch(this.contactSoundConfig.rightSamplePath)
       ]);
       
       if (!leftResponse.ok || !rightResponse.ok) {
-        console.warn('Click samples not found, using fallback tones');
-        // Create simple fallback tones instead of failing
+        console.warn('AudioEngine: Click samples not found, using fallback tones');
         this.createFallbackTones();
         return;
       }
@@ -183,39 +194,74 @@ export class AudioEngine {
       try {
         this.leftClickBuffer = await this.audioContext.decodeAudioData(leftArrayBuffer);
         this.rightClickBuffer = await this.audioContext.decodeAudioData(rightArrayBuffer);
-        console.log('Click samples loaded successfully');
+        console.log('AudioEngine: Click samples loaded successfully');
       } catch (decodeError) {
-        console.warn('Failed to decode audio samples, using fallback tones:', decodeError);
+        console.warn('AudioEngine: Failed to decode audio samples, using fallback tones:', decodeError);
         this.createFallbackTones();
       }
     } catch (error) {
-      console.warn('Error loading click samples, using fallback tones:', error);
+      console.warn('AudioEngine: Error loading click samples, using fallback tones:', error);
       this.createFallbackTones();
     }
   }
   
   private createFallbackTones(): void {
-    if (!this.audioContext) return;
+    if (!this.audioContext) {
+      console.warn('AudioEngine: Cannot create fallback tones - no audio context');
+      return;
+    }
+    
+    console.log('AudioEngine: Creating fallback tones');
     
     // Create simple sine wave buffers as fallback
     const sampleRate = this.audioContext.sampleRate;
-    const duration = 0.1; // 100ms
-    const frequency = 440; // A4 note
+    const duration = 0.15; // 150ms for smoother fade
+    const numSamples = Math.floor(sampleRate * duration);
     
-    const leftBuffer = this.audioContext.createBuffer(1, sampleRate * duration, sampleRate);
-    const rightBuffer = this.audioContext.createBuffer(1, sampleRate * duration, sampleRate);
+    // Create buffers for both channels
+    const leftBuffer = this.audioContext.createBuffer(1, numSamples, sampleRate);
+    const rightBuffer = this.audioContext.createBuffer(1, numSamples, sampleRate);
     
     const leftData = leftBuffer.getChannelData(0);
     const rightData = rightBuffer.getChannelData(0);
     
-    for (let i = 0; i < leftBuffer.length; i++) {
+    // Envelope parameters
+    const attackTime = 0.005; // 5ms attack
+    const decayTime = 0.145; // Rest is decay
+    const attackSamples = Math.floor(sampleRate * attackTime);
+    const decaySamples = numSamples - attackSamples;
+    
+    // Generate tones with different frequencies
+    const leftFreq = 440; // A4
+    const rightFreq = 880; // A5
+    
+    for (let i = 0; i < numSamples; i++) {
       const t = i / sampleRate;
-      leftData[i] = Math.sin(2 * Math.PI * frequency * t) * 0.5;
-      rightData[i] = Math.sin(2 * Math.PI * (frequency * 1.1) * t) * 0.5; // Slightly higher frequency for right
+      
+      // Generate sine waves
+      const leftSample = Math.sin(2 * Math.PI * leftFreq * t);
+      const rightSample = Math.sin(2 * Math.PI * rightFreq * t);
+      
+      // Apply envelope
+      let envelope;
+      if (i < attackSamples) {
+        // Smooth attack using quarter sine wave shape
+        envelope = Math.sin((i / attackSamples) * Math.PI / 2);
+      } else {
+        // Exponential decay
+        const decayProgress = (i - attackSamples) / decaySamples;
+        envelope = Math.exp(-4 * decayProgress);
+      }
+      
+      // Apply envelope and scale
+      leftData[i] = leftSample * envelope * 0.5;
+      rightData[i] = rightSample * envelope * 0.5;
     }
     
     this.leftClickBuffer = leftBuffer;
     this.rightClickBuffer = rightBuffer;
+    
+    console.log('AudioEngine: Fallback tones created successfully');
   }
   
   // Set audio mode

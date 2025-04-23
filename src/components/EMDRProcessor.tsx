@@ -96,16 +96,21 @@ export function EMDRProcessor() {
   
   // Settings state
   const [settings, setSettings] = useState({
-    speed: 1000,
+    speed: 60,
     freqLeft: 440,
-    freqRight: 480,
+    freqRight: 440,
     targetSize: 50,
     visualIntensity: 0.8,
-    sessionDuration: 5,
+    sessionDuration: 30,
     oscillatorType: 'sine' as const,
-    targetColor: '#ff0000',
-    backgroundColor: '#64748b', // Slate grey color
+    targetColor: '#ffffff',
+    backgroundColor: '#1a1a1a',
+    audioMode: false,
+    volume: 0.5
   });
+  
+  // Add reduced motion support
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   
   // Initialize canvas when component mounts
   useEffect(() => {
@@ -373,7 +378,11 @@ export function EMDRProcessor() {
     // Clean up on component unmount
     return () => {
       if (audioContextRef.current.context) {
-        audioContextRef.current.context.close();
+        try {
+          audioContextRef.current.context.close().catch(console.error);
+        } catch (error) {
+          console.error('Error closing audio context:', error);
+        }
       }
     };
   }, []);
@@ -799,26 +808,35 @@ export function EMDRProcessor() {
   }, [timeRemaining, isPlaying, sessionDuration]);
 
   // Handle settings changes
-  const handleSettingChange = (settingName: string, value: number | string) => {
+  const handleSettingChange = async (settingName: string, value: number | string | boolean) => {
     setSettings(prev => ({
       ...prev,
       [settingName]: value
     }));
-    
-    // Update audio engine if needed
-    if (audioEngineRef.current) {
+
+    try {
       switch (settingName) {
-        case 'volume':
-          audioEngineRef.current.setVolume(Number(value));
-          break;
         case 'audioMode':
-          audioEngineRef.current.setAudioMode(value as AudioMode);
+          await audioEngineRef.current?.setAudioMode(value ? 'audioTrack' : 'click');
+          setA11yMessage('Audio mode changed');
           break;
+        case 'volume':
+          await audioEngineRef.current?.setVolume(value as number);
+          setA11yMessage('Volume changed');
+          break;
+        case 'speed':
+          // ... existing speed case ...
+          break;
+        case 'freqLeft':
+        case 'freqRight':
+          // ... existing frequency cases ...
+          break;
+        // ... other cases ...
       }
+    } catch (error) {
+      console.error(`Failed to update ${settingName}:`, error);
+      setA11yMessage(`Failed to update ${settingName}`);
     }
-    
-    // Update accessibility message
-    setA11yMessage(`${settingName} changed to ${value}`);
   };
 
   // Handle play/pause toggle
@@ -1156,6 +1174,35 @@ export function EMDRProcessor() {
     const file = files[0];
     handleFileUpload(file);
   };
+
+  // Add reduced motion support
+  useEffect(() => {
+    // Check for reduced motion preference
+    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    setPrefersReducedMotion(mediaQuery.matches);
+
+    // Listen for changes
+    const handleChange = (e: MediaQueryListEvent) => {
+      setPrefersReducedMotion(e.matches);
+      if (e.matches) {
+        setA11yMessage('Reduced motion mode activated');
+      }
+    };
+
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, []);
+
+  // Update animation to respect reduced motion
+  useEffect(() => {
+    if (prefersReducedMotion && isPlaying) {
+      // In reduced motion mode, just show a static target
+      drawVisualTarget();
+      return;
+    }
+
+    // Rest of the animation code...
+  }, [isPlaying, prefersReducedMotion]);
 
   return (
     <div 

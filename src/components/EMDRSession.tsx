@@ -7,7 +7,6 @@ import SessionTimer from './SessionTimer';
 import SettingsDrawer from './SettingsDrawer';
 import { useAudioSynthesis } from '../hooks/useAudioSynthesis';
 import { playGuideTone } from '../utils/soundUtils';
-import { EMDRPreset } from '../hooks/usePresets';
 
 interface EMDRSessionProps {
   defaultSpeed?: number; // milliseconds for one complete cycle
@@ -29,6 +28,10 @@ const EMDRSession: React.FC<EMDRSessionProps> = ({
   const [cleanupPanningOsc, setCleanupPanningOsc] = useState<(() => void) | null>(null);
   const [visualIntensity, setVisualIntensity] = useState(0.8); // default to 80%
   const [targetSize, setTargetSize] = useState(50); // default size in pixels
+  const [targetColor, setTargetColor] = useState('#ff0000'); // default red
+  const [targetShape, setTargetShape] = useState<'circle' | 'square'>('circle');
+  const [targetHasGlow, setTargetHasGlow] = useState(true);
+  const [targetMovementPattern, setTargetMovementPattern] = useState<'ping-pong' | 'sine'>('ping-pong');
   const [sessionDuration, setSessionDuration] = useState(5); // default 5 minutes
   const [useConstantPanning, setUseConstantPanning] = useState(true); // Toggle for panning vs ping-pong
   
@@ -104,7 +107,7 @@ const EMDRSession: React.FC<EMDRSessionProps> = ({
   }, [isActive, stopSession]);
   
   // Handle setting changes
-  const handleSettingChange = useCallback((settingName: string, value: number | string) => {
+  const handleSettingChange = useCallback((settingName: string, value: number | string | boolean) => {
     switch (settingName) {
       case 'speed':
         setSpeed(value as number);
@@ -124,36 +127,25 @@ const EMDRSession: React.FC<EMDRSessionProps> = ({
       case 'visualIntensity':
         setVisualIntensity(value as number);
         break;
+      case 'targetColor':
+        setTargetColor(value as string);
+        break;
+      case 'targetShape':
+        setTargetShape(value as 'circle' | 'square');
+        break;
+      case 'targetHasGlow':
+        setTargetHasGlow(value as boolean);
+        break;
+      case 'targetMovementPattern':
+        setTargetMovementPattern(value as 'ping-pong' | 'sine');
+        break;
       case 'sessionDuration':
         setSessionDuration(value as number);
         break;
     }
   }, []);
-  
-  // Handle preset selection
-  const handlePresetSelect = useCallback((preset: EMDRPreset) => {
-    if (isActive) {
-      // Don't change settings while active
-      window.alert('Please stop the current session before changing presets.');
-      return;
-    }
-    
-    setSpeed(preset.speed);
-    setFreqLeft(preset.freqLeft);
-    setFreqRight(preset.freqRight);
-    setTargetSize(preset.targetSize);
-    setVisualIntensity(preset.visualIntensity);
-    setSessionDuration(preset.sessionDuration);
-    
-    // Handle oscillatorType if it exists in the preset
-    if ('oscillatorType' in preset) {
-      setOscillatorType(preset.oscillatorType as 'sine' | 'square' | 'triangle' | 'sawtooth');
-    }
-    
-    playGuideTone('success', { duration: 0.2 });
-  }, [isActive]);
-  
-  // Current settings for preset saving
+
+  // Current settings for the settings drawer
   const currentSettings = {
     speed,
     freqLeft,
@@ -162,6 +154,10 @@ const EMDRSession: React.FC<EMDRSessionProps> = ({
     visualIntensity,
     sessionDuration,
     oscillatorType,
+    targetColor,
+    targetShape,
+    targetHasGlow,
+    targetMovementPattern,
   };
 
   return (
@@ -186,7 +182,10 @@ const EMDRSession: React.FC<EMDRSessionProps> = ({
             isActive={isActive} 
             speed={speed} 
             size={targetSize} 
-            color="#ff0000" 
+            color={targetColor}
+            shape={targetShape}
+            hasGlow={targetHasGlow}
+            movementPattern={targetMovementPattern}
             intensity={visualIntensity}
           />
         </div>
@@ -234,7 +233,6 @@ const EMDRSession: React.FC<EMDRSessionProps> = ({
         isSessionActive={isActive}
         settings={currentSettings}
         onSettingChange={handleSettingChange}
-        onPresetSelect={handlePresetSelect}
       />
     </div>
   );

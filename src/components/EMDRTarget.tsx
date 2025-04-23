@@ -6,6 +6,9 @@ interface EMDRTargetProps {
   speed?: number; // time in ms for one full cycle
   size?: number; // size in pixels
   color?: string;
+  shape?: 'circle' | 'square';
+  hasGlow?: boolean;
+  movementPattern?: 'ping-pong' | 'sine';
   pingPong?: boolean;
   intensity?: number; // 0 to 1 for opacity
 }
@@ -15,6 +18,9 @@ const EMDRTarget: React.FC<EMDRTargetProps> = ({
   speed = 1000,
   size = 40,
   color = '#ff0000',
+  shape = 'circle',
+  hasGlow = true,
+  movementPattern = 'ping-pong',
   pingPong = true,
   intensity = 1,
 }) => {
@@ -26,7 +32,7 @@ const EMDRTarget: React.FC<EMDRTargetProps> = ({
       return;
     }
 
-    if (pingPong) {
+    if (movementPattern === 'ping-pong') {
       let currentPosition: 'left' | 'center' | 'right' = 'center';
       let direction: 'left' | 'right' = 'right';
       
@@ -44,7 +50,7 @@ const EMDRTarget: React.FC<EMDRTargetProps> = ({
 
       return () => clearInterval(interval);
     }
-  }, [isActive, speed, pingPong]);
+  }, [isActive, speed, movementPattern]);
 
   // Calculate x position based on state
   const getXPosition = () => {
@@ -78,6 +84,27 @@ const EMDRTarget: React.FC<EMDRTargetProps> = ({
     return color;
   };
 
+  // Get shape-specific styles
+  const getShapeStyles = () => {
+    const baseStyles = {
+      width: size,
+      height: size,
+      backgroundColor: getBackgroundColor(),
+    };
+
+    if (hasGlow) {
+      baseStyles.boxShadow = `0 0 ${size/4}px ${getBackgroundColor()}`;
+    }
+
+    if (shape === 'square') {
+      baseStyles.borderRadius = '4px';
+    } else {
+      baseStyles.borderRadius = '50%';
+    }
+
+    return baseStyles;
+  };
+
   return (
     <div 
       className="relative w-full h-32 flex items-center justify-center" 
@@ -95,13 +122,8 @@ const EMDRTarget: React.FC<EMDRTargetProps> = ({
           stiffness: 100,
           damping: 15,
         }}
-        className="rounded-full absolute"
-        style={{
-          width: size,
-          height: size,
-          backgroundColor: getBackgroundColor(),
-          boxShadow: `0 0 ${size/4}px ${getBackgroundColor()}`,
-        }}
+        className="absolute"
+        style={getShapeStyles()}
         aria-live="polite"
         aria-label={`Target is at the ${position} position`}
       />

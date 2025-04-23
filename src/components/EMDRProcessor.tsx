@@ -26,12 +26,19 @@ interface AudioContextState {
   gainNode: GainNode | null;
 }
 
+// Add type for webkitAudioContext
+interface WebkitAudioContext extends AudioContext {}
+declare global {
+  interface Window {
+    webkitAudioContext?: typeof AudioContext;
+  }
+}
+
 export function EMDRProcessor() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [selectedAudio, setSelectedAudio] = useState<AudioFile | null>(null);
   const [audioFiles, setAudioFiles] = useState<AudioFile[]>([]);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [folderPath, setFolderPath] = useState<string>('');
   const [a11yMessage, setA11yMessage] = useState<string>('Visual target ready. Audio controls available at bottom of screen.');
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [panValue, setPanValue] = useState(0); // -1 (left) to 1 (right)
@@ -49,7 +56,7 @@ export function EMDRProcessor() {
     enabled: true
   });
   
-  const [audioTrackConfig, setAudioTrackConfig] = useState<AudioTrackConfig>({
+  const [audioTrackConfig] = useState<AudioTrackConfig>({
     volume: 0.7,
     loop: true,
     filePath: '/audio/sine-440hz.mp3'
@@ -293,12 +300,6 @@ export function EMDRProcessor() {
     if (lastSelectedAudio) {
       setSelectedAudio(JSON.parse(lastSelectedAudio));
     }
-    
-    // Load saved folder path
-    const savedFolderPath = localStorage.getItem('folderPath');
-    if (savedFolderPath) {
-      setFolderPath(savedFolderPath);
-    }
   }, []);
   
   // Save audio metadata to localStorage when they change
@@ -342,10 +343,12 @@ export function EMDRProcessor() {
   
   // Initialize audio context
   useEffect(() => {
-    // Create new audio context if needed
     if (!audioContextRef.current.context) {
       try {
-        const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) {
+          throw new Error('AudioContext not supported');
+        }
         const context = new AudioContext();
         const gainNode = context.createGain();
         const panner = context.createStereoPanner();
@@ -543,7 +546,6 @@ export function EMDRProcessor() {
       const ctx = canvasRef.current.getContext('2d');
       if (!ctx) return;
       
-      // Clear canvas
       ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
       
       // Update pan value
@@ -559,7 +561,7 @@ export function EMDRProcessor() {
     };
     
     animate();
-  }, [panWidthPercent, drawTarget]);
+  }, [panWidthPercent, drawTarget, animationFrameId]);
 
   const stopAnimation = useCallback(() => {
     if (animationFrameId) {
@@ -968,4 +970,4 @@ export function EMDRProcessor() {
       </div>
     </div>
   );
-} 
+}

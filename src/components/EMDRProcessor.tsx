@@ -107,6 +107,12 @@ export default function EMDRProcessor() {
   // Refs
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   
+  // Add audioMetadata state
+  const [audioMetadata, setAudioMetadata] = useState<{
+    duration: number;
+    sampleRate: number;
+  } | null>(null);
+  
   // Draw visual target helper function
   const drawVisualTarget = useCallback(() => {
     if (!canvasRef.current) return;
@@ -812,6 +818,59 @@ export default function EMDRProcessor() {
         }
         break;
       }
+      case 'audioTrack': {
+        const file = value as File;
+        if (!file) return;
+
+        try {
+          // Create object URL for the file
+          const objectUrl = URL.createObjectURL(file);
+          
+          // Create a new audio element to get metadata
+          const audio = new Audio();
+          audio.src = objectUrl;
+          
+          // Wait for metadata to load
+          await new Promise((resolve, reject) => {
+            audio.addEventListener('loadedmetadata', resolve);
+            audio.addEventListener('error', reject);
+          });
+          
+          // Create new audio file object
+          const newAudio: AudioFile = {
+            id: Date.now().toString(),
+            name: file.name,
+            lastUsed: new Date().toISOString(),
+            objectUrl
+          };
+          
+          // Update audio metadata
+          setAudioMetadata({
+            duration: audio.duration,
+            sampleRate: 44100 // Default sample rate, as we can't get this from the Audio API
+          });
+          
+          // Update selected audio
+          setSelectedAudio(newAudio);
+          
+          // Save to localStorage
+          const savedTracks = JSON.parse(localStorage.getItem('audioTracks') || '[]');
+          savedTracks.push(newAudio);
+          localStorage.setItem('audioTracks', JSON.stringify(savedTracks));
+          
+          // Update audio player source
+          if (audioPlayerRef.current) {
+            audioPlayerRef.current.src = objectUrl;
+            await audioPlayerRef.current.load();
+          }
+          
+          setA11yMessage(`Audio track ${file.name} loaded successfully`);
+        } catch (error) {
+          console.error('Error uploading audio track:', error);
+          setAudioError('Failed to upload audio track');
+        }
+        break;
+      }
       default:
         console.warn(`Unknown setting: ${setting}`);
     }
@@ -837,6 +896,54 @@ export default function EMDRProcessor() {
     } catch (error) {
       console.error('Error loading saved click sounds:', error);
     }
+  }, []);
+
+  // Load saved audio tracks on mount
+  useEffect(() => {
+    try {
+      const savedTracks = JSON.parse(localStorage.getItem('audioTracks') || '[]');
+      if (savedTracks.length > 0) {
+        // Set the most recently used track as selected
+        const mostRecent = savedTracks.reduce((prev: AudioFile, curr: AudioFile) => {
+          return new Date(prev.lastUsed) > new Date(curr.lastUsed) ? prev : curr;
+        });
+        setSelectedAudio(mostRecent);
+        
+        // Load the audio metadata
+        const audio = new Audio(mostRecent.objectUrl);
+        audio.addEventListener('loadedmetadata', () => {
+          setAudioMetadata({
+            duration: audio.duration,
+            sampleRate: 44100
+          });
+        });
+      }
+    } catch (error) {
+      console.error('Error loading saved audio tracks:', error);
+    }
+  }, []);
+
+  // Clean up object URLs on unmount
+  useEffect(() => {
+    return () => {
+      try {
+        const savedTracks = JSON.parse(localStorage.getItem('audioTracks') || '[]');
+        savedTracks.forEach((track: AudioFile) => {
+          if (track.objectUrl) {
+            URL.revokeObjectURL(track.objectUrl);
+          }
+        });
+        
+        const savedSounds = JSON.parse(localStorage.getItem('customClickSounds') || '{}');
+        Object.values(savedSounds).forEach((sound: any) => {
+          if (sound.objectUrl) {
+            URL.revokeObjectURL(sound.objectUrl);
+          }
+        });
+      } catch (error) {
+        console.error('Error cleaning up object URLs:', error);
+      }
+    };
   }, []);
 
   const handleBpmChange = (newBpm: number) => {
@@ -912,7 +1019,7 @@ export default function EMDRProcessor() {
           onBpmChange={handleBpmChange}
           onAudioSelect={setSelectedAudio}
           selectedAudio={selectedAudio}
-          audioMetadata={null} // TODO: Add audio metadata handling
+          audioMetadata={audioMetadata}
         />
 
         {/* Controls - z-20 to be above canvas but below menu */}

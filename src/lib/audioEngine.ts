@@ -1,5 +1,7 @@
 // Audio Engine for EMDR Processor
 
+import { getAudioContext, getMediaElementSource, resumeAudioContext } from '../utils/audioUtils';
+
 export type AudioMode = 'click' | 'track';
 
 export interface ContactSoundConfig {
@@ -17,11 +19,11 @@ export interface AudioTrackConfig {
 
 // Main Audio Engine Class
 export class AudioEngine {
-  private context: AudioContext | null = null;
-  private audioTrackNode: MediaElementAudioSourceNode | null = null;
-  private gainNode: GainNode | null = null;
-  private pannerNode: StereoPannerNode | null = null;
+  private audioContext: AudioContext | null = null;
   private audioElement: HTMLAudioElement | null = null;
+  private mediaElementSource: MediaElementAudioSourceNode | null = null;
+  private gainNode: GainNode | null = null;
+  private clickBuffer: AudioBuffer | null = null;
   private isPlaying = false;
   private currentMode: AudioMode = 'click';
   private audioElementConnected = false;
@@ -36,8 +38,8 @@ export class AudioEngine {
   
   // Configuration
   private contactSoundConfig: ContactSoundConfig = {
-    leftSamplePath: '/sounds/click-left.mp3',
-    rightSamplePath: '/sounds/click-right.mp3',
+    leftSamplePath: '/sounds/click-left.wav',
+    rightSamplePath: '/sounds/click-right.wav',
     volume: 0.5,
     enabled: true
   };
@@ -48,42 +50,39 @@ export class AudioEngine {
     filePath: '/audio/sine-440hz.mp3'
   };
 
-  // Initialize the audio engine
-  public async initialize(audioElement?: HTMLAudioElement): Promise<boolean> {
+  async initialize(audioElement?: HTMLAudioElement): Promise<void> {
     try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      this.context = new AudioCtx();
+      // Get the singleton audio context
+      this.audioContext = getAudioContext();
       
-      // Create main nodes
-      this.gainNode = this.context.createGain();
-      this.pannerNode = this.context.createStereoPanner();
-      
-      // Connect nodes
-      this.gainNode.connect(this.pannerNode);
-      this.pannerNode.connect(this.context.destination);
-      
-      // Set audio element if provided
+      // Create gain node
+      this.gainNode = this.audioContext.createGain();
+      this.gainNode.connect(this.audioContext.destination);
+
       if (audioElement) {
         this.audioElement = audioElement;
-        this.audioTrackNode = this.context.createMediaElementSource(audioElement);
-        this.audioTrackNode.connect(this.gainNode);
-        this.audioElementConnected = true;
+        // Get or create the MediaElementSource
+        this.mediaElementSource = getMediaElementSource(audioElement);
+        this.mediaElementSource.connect(this.gainNode);
+        console.log('Audio element connected successfully');
       }
-      
+
       // Load click samples
       await this.loadClickSamples();
       
+      // Resume audio context
+      await resumeAudioContext();
+      
       console.log('AudioEngine initialized successfully');
-      return true;
     } catch (error) {
-      console.error('Failed to initialize AudioEngine:', error);
-      return false;
+      console.error('Error initializing AudioEngine:', error);
+      throw error;
     }
   }
   
   // Load click samples
   private async loadClickSamples(): Promise<void> {
-    if (!this.context) return;
+    if (!this.audioContext) return;
     
     try {
       const [leftResponse, rightResponse] = await Promise.all([
@@ -104,8 +103,8 @@ export class AudioEngine {
       ]);
       
       try {
-        this.leftClickBuffer = await this.context.decodeAudioData(leftArrayBuffer);
-        this.rightClickBuffer = await this.context.decodeAudioData(rightArrayBuffer);
+        this.leftClickBuffer = await this.audioContext.decodeAudioData(leftArrayBuffer);
+        this.rightClickBuffer = await this.audioContext.decodeAudioData(rightArrayBuffer);
         console.log('Click samples loaded successfully');
       } catch (decodeError) {
         console.warn('Failed to decode audio samples, using fallback tones:', decodeError);
@@ -118,15 +117,15 @@ export class AudioEngine {
   }
   
   private createFallbackTones(): void {
-    if (!this.context) return;
+    if (!this.audioContext) return;
     
     // Create simple sine wave buffers as fallback
-    const sampleRate = this.context.sampleRate;
+    const sampleRate = this.audioContext.sampleRate;
     const duration = 0.1; // 100ms
     const frequency = 440; // A4 note
     
-    const leftBuffer = this.context.createBuffer(1, sampleRate * duration, sampleRate);
-    const rightBuffer = this.context.createBuffer(1, sampleRate * duration, sampleRate);
+    const leftBuffer = this.audioContext.createBuffer(1, sampleRate * duration, sampleRate);
+    const rightBuffer = this.audioContext.createBuffer(1, sampleRate * duration, sampleRate);
     
     const leftData = leftBuffer.getChannelData(0);
     const rightData = rightBuffer.getChannelData(0);
@@ -145,14 +144,13 @@ export class AudioEngine {
   public dispose(): void {
     this.stopAll();
     
-    if (this.context) {
-      this.context.close();
-      this.context = null;
+    if (this.audioContext) {
+      this.audioContext.close();
+      this.audioContext = null;
     }
     
     this.gainNode = null;
-    this.pannerNode = null;
-    this.audioTrackNode = null;
+    this.mediaElementSource = null;
     this.leftClickBuffer = null;
     this.rightClickBuffer = null;
   }
@@ -172,31 +170,48 @@ export class AudioEngine {
   
   // Play a contact sound with panning
   public playContactSound(isRightSide: boolean): void {
-    if (!this.context || !this.contactSoundConfig.enabled || this.currentMode !== 'click') return;
+    if (!this.audioContext || !this.contactSoundConfig.enabled || this.currentMode !== 'click') {
+      console.log('Cannot play contact sound:', {
+        hasContext: !!this.audioContext,
+        contextState: this.audioContext?.state,
+        enabled: this.contactSoundConfig.enabled,
+        mode: this.currentMode
+      });
+      return;
+    }
     
     try {
       const buffer = isRightSide ? this.rightClickBuffer : this.leftClickBuffer;
-      if (!buffer) return;
+      if (!buffer) {
+        console.warn('No sound buffer available');
+        return;
+      }
       
-      const source = this.context.createBufferSource();
-      const soundGain = this.context.createGain();
-      const soundPanner = this.context.createStereoPanner();
-      
+      const source = this.audioContext.createBufferSource();
       source.buffer = buffer;
+      
+      // Create a gain node for this sound
+      const soundGain = this.audioContext.createGain();
       soundGain.gain.value = this.contactSoundConfig.volume;
-      soundPanner.pan.value = isRightSide ? 1 : -1;
       
+      // Connect through main gain and panner nodes
       source.connect(soundGain);
-      soundGain.connect(soundPanner);
-      soundPanner.connect(this.context.destination);
+      soundGain.connect(this.gainNode!);
       
+      console.log('Playing contact sound:', {
+        side: isRightSide ? 'right' : 'left',
+        volume: this.contactSoundConfig.volume,
+        bufferDuration: buffer.duration,
+        contextState: this.audioContext.state
+      });
+      
+      // Start playback
       source.start();
       
       // Clean up
       source.onended = () => {
         source.disconnect();
         soundGain.disconnect();
-        soundPanner.disconnect();
       };
       
     } catch (error) {
@@ -205,17 +220,29 @@ export class AudioEngine {
   }
   
   // Start playing based on current mode
-  public startPlayback(): boolean {
-    if (!this.context) return false;
-    
+  public async startPlayback(): Promise<boolean> {
+    if (!this.audioContext) {
+      console.error('No audio context available');
+      return false;
+    }
+
     try {
+      // Make sure context is running
+      if (this.audioContext.state === 'suspended') {
+        await this.audioContext.resume();
+      }
+
       if (this.currentMode === 'click') {
+        console.log('Starting click mode playback');
         this.isPlaying = true;
         return true;
       } else if (this.currentMode === 'track') {
-        this.startAudioTrack();
+        console.log('Starting track mode playback');
+        await this.startAudioTrack();
         return true;
       }
+
+      console.warn('Unknown audio mode:', this.currentMode);
       return false;
     } catch (error) {
       console.error('Error starting playback:', error);
@@ -233,38 +260,43 @@ export class AudioEngine {
   }
   
   // Start playing audio track
-  private startAudioTrack(): void {
-    if (!this.context || this.isPlaying || this.currentMode !== 'track' || !this.audioElement) return;
+  private async startAudioTrack(): Promise<void> {
+    if (!this.audioContext || this.isPlaying || this.currentMode !== 'track' || !this.audioElement) {
+      console.log('Cannot start audio track:', {
+        hasContext: !!this.audioContext,
+        isPlaying: this.isPlaying,
+        mode: this.currentMode,
+        hasAudioElement: !!this.audioElement
+      });
+      return;
+    }
     
     try {
-      if (!this.audioElementConnected && this.audioTrackNode === null) {
+      if (!this.audioElementConnected && this.mediaElementSource === null) {
         console.error('Audio element not properly connected');
         return;
       }
       
       this.audioElement.loop = this.audioTrackConfig.loop;
-      this.audioElement.src = this.audioTrackConfig.filePath;
       
+      // Set volume through gain node
       if (this.gainNode) {
         this.gainNode.gain.value = this.audioTrackConfig.volume;
+        console.log('Set audio track volume:', this.audioTrackConfig.volume);
       }
       
-      const onPlay = () => {
+      // Play the audio
+      try {
+        await this.audioElement.play();
+        console.log('Audio track playback started');
         this.isPlaying = true;
-        this.audioElement?.removeEventListener('play', onPlay);
-      };
-      
-      const onError = () => {
-        console.error('Error playing audio track');
-        this.audioElement?.removeEventListener('error', onError);
-      };
-      
-      this.audioElement.addEventListener('play', onPlay);
-      this.audioElement.addEventListener('error', onError);
-      
-      this.audioElement.play();
+      } catch (playError) {
+        console.error('Error playing audio track:', playError);
+        throw playError;
+      }
     } catch (error) {
-      console.error('Error starting audio track:', error);
+      console.error('Error in startAudioTrack:', error);
+      throw error;
     }
   }
   
@@ -317,15 +349,15 @@ export class AudioEngine {
   }
 
   public setPan(value: number): void {
-    if (this.pannerNode) {
-      this.pannerNode.pan.setValueAtTime(value, this.context?.currentTime ?? 0);
+    if (this.gainNode) {
+      this.gainNode.gain.setValueAtTime(value, this.audioContext?.currentTime ?? 0);
     }
   }
 
   // Update frequencies for the audio engine
   public updateFrequencies(leftFreq: number, rightFreq: number): void {
     // Update the frequencies in the audio engine
-    if (this.context) {
+    if (this.audioContext) {
       // If we have an active oscillator, update its frequency
       if (this.oscillator) {
         this.oscillator.frequency.value = leftFreq;
@@ -335,6 +367,13 @@ export class AudioEngine {
       if (this.oscillatorRight) {
         this.oscillatorRight.frequency.value = rightFreq;
       }
+    }
+  }
+
+  // Resume audio context if suspended
+  public async resumeContext(): Promise<void> {
+    if (this.audioContext?.state === 'suspended') {
+      await this.audioContext.resume();
     }
   }
 } 

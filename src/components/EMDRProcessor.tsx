@@ -7,6 +7,7 @@ import {
   ContactSoundConfig
 } from '../lib/audioEngine';
 import UnifiedSettings from './UnifiedSettings';
+import { getAudioContext, getMediaElementSource, resumeAudioContext } from '../utils/audioUtils';
 
 // Simple version without the File System Access API
 type AudioFile = {
@@ -41,9 +42,8 @@ declare global {
 
 export default function EMDRProcessor() {
   // State variables
-  const [audioMode, setAudioMode] = useState<AudioMode>('click');
+  const [audioMode, setAudioMode] = useState<'click' | 'track'>('click');
   const [panValue, setPanValue] = useState(0);
-  const [panWidthPercent, setPanWidthPercent] = useState(50);
   const [a11yMessage, setA11yMessage] = useState('');
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -51,26 +51,25 @@ export default function EMDRProcessor() {
   const [selectedAudio, setSelectedAudio] = useState<AudioFile | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [animationFrameId, setAnimationFrameId] = useState<number | null>(null);
+  const [audioError, setAudioError] = useState<string | null>(null);
   
-  // Visual settings
-  const [targetSize, setTargetSize] = useState(50);
-  const [visualIntensity, setVisualIntensity] = useState(1);
-  const [targetColor, setTargetColor] = useState('#ffffff');
-  const [targetShape, setTargetShape] = useState<'circle' | 'square'>('circle');
-  const [targetHasGlow, setTargetHasGlow] = useState(true);
-  const [targetMovementPattern, setTargetMovementPattern] = useState<'ping-pong' | 'sine'>('ping-pong');
+  // Visual settings with simplified options
+  const [targetShape, setTargetShape] = useState<'circle' | 'square' | 'triangle' | 'diamond'>('circle');
+  const [visualIntensity, setVisualIntensity] = useState(0.6); // Medium intensity by default
+  const [targetHasGlow] = useState(true); // Always enabled for better visibility
+  const [targetSize] = useState(50); // Fixed size
+  const [targetColor] = useState('#ffffff'); // Fixed color
+  const [bpm, setBpm] = useState(60);
   
-  // Audio settings
-  const [speed, setSpeed] = useState(1000);
-  const [freqLeft, setFreqLeft] = useState(440);
-  const [freqRight, setFreqRight] = useState(480);
+  // Convert BPM to milliseconds for animation speed
+  const speed = Math.round(60000 / bpm); // 60000ms = 1 minute
   
-  // Audio track config
-  const [audioTrackConfig, setAudioTrackConfig] = useState<EMDRTrackConfig>({
+  // Audio track config with simplified options
+  const [audioTrackConfig] = useState<EMDRTrackConfig>({
     bpm: 60,
-    sessionDuration: 300,
+    sessionDuration: 300, // 5 minutes default
     oscillatorType: 'sine',
-    volume: 0.5
+    volume: 0.7
   });
 
   const [audioFiles, setAudioFiles] = useState<AudioFile[]>([]);
@@ -165,42 +164,57 @@ export default function EMDRProcessor() {
   
   // Initialize Audio Engine
   useEffect(() => {
-    // IIFE to handle async initialization
+    let mounted = true;
+
     (async () => {
-      // Initialize with our audio element
-      if (audioPlayerRef.current) {
-        try {
-          const audioEngine = new AudioEngine();
-          const success = await audioEngine.initialize(audioPlayerRef.current);
-          
-          if (success) {
-            console.log('AudioEngine initialized with audio element');
-            
-            // Set initial configurations
-            audioEngine.updateContactSoundConfig(contactSoundConfig);
-            
-            // Set initial audio mode
-            audioEngine.setAudioMode(audioMode);
-            
-            // Store in ref
-            audioEngineRef.current = audioEngine;
-          } else {
-            console.error('Failed to initialize AudioEngine');
-          }
-        } catch (error) {
-          console.error('Error initializing AudioEngine:', error);
+      if (!audioPlayerRef.current) {
+        console.error('Audio player element not found');
+        setAudioError('Audio player element not found');
+        return;
+      }
+
+      try {
+        // Create new audio engine
+        const audioEngine = new AudioEngine();
+        console.log('Created new AudioEngine instance');
+
+        // Initialize with our audio element
+        await audioEngine.initialize(audioPlayerRef.current);
+        if (!mounted) return;
+
+        console.log('AudioEngine initialized successfully');
+        
+        // Set initial configurations
+        audioEngine.updateContactSoundConfig(contactSoundConfig);
+        audioEngine.setAudioMode(audioMode);
+        
+        // Store in ref
+        audioEngineRef.current = audioEngine;
+
+        // Set initial audio source
+        if (audioMode === 'track' && selectedAudio?.path) {
+          audioPlayerRef.current.src = selectedAudio.path;
+          await audioPlayerRef.current.load();
+          console.log('Audio track loaded:', selectedAudio.path);
         }
+
+        // Clear any previous errors
+        setAudioError(null);
+      } catch (error) {
+        console.error('Error initializing AudioEngine:', error);
+        setAudioError(error instanceof Error ? error.message : 'Failed to initialize audio');
       }
     })();
     
     // Clean up on unmount
     return () => {
+      mounted = false;
       if (audioEngineRef.current) {
         audioEngineRef.current.dispose();
         audioEngineRef.current = null;
       }
     };
-  }, [audioMode, contactSoundConfig]);
+  }, [audioMode, contactSoundConfig, selectedAudio]);
   
   // Sync configurations with audio engine when they change
   useEffect(() => {
@@ -351,44 +365,44 @@ export default function EMDRProcessor() {
   
   // Initialize audio context on first user interaction
   const initializeAudio = useCallback(async () => {
-    if (!audioContextRef.current.context) {
-      try {
-        const AudioContext = window.AudioContext || window.webkitAudioContext;
-        if (!AudioContext) {
-          throw new Error('AudioContext not supported');
-        }
-        const context = new AudioContext();
-        const gainNode = context.createGain();
-        const panner = context.createStereoPanner();
-        
-        gainNode.connect(panner);
-        panner.connect(context.destination);
-        
-        audioContextRef.current = {
-          context,
-          source: null,
-          panner,
-          gainNode
-        };
-        
-        // Initialize audio engine after context is created
-        if (audioPlayerRef.current) {
-          const audioEngine = new AudioEngine();
-          const success = await audioEngine.initialize(audioPlayerRef.current);
-          
-          if (success) {
-            audioEngine.updateContactSoundConfig(contactSoundConfig);
-            audioEngine.setAudioMode(audioMode);
-            audioEngineRef.current = audioEngine;
-          }
-        }
-        
-        console.log('Audio context created successfully');
-      } catch (error) {
-        console.error('Failed to create audio context:', error);
-      }
+    if (!audioPlayerRef.current) {
+      console.error('Audio player element not found');
+      return;
     }
-  }, [audioMode, contactSoundConfig]);
+
+    try {
+      // Get the singleton audio context
+      const audioContext = getAudioContext();
+      
+      // Get or create the MediaElementSource
+      const mediaElementSource = getMediaElementSource(audioPlayerRef.current);
+      
+      // Create gain node
+      const gainNode = audioContext.createGain();
+      gainNode.connect(audioContext.destination);
+      
+      // Connect the media element source to the gain node
+      mediaElementSource.connect(gainNode);
+      
+      // Resume audio context
+      await resumeAudioContext();
+      
+      console.log('Audio initialized successfully');
+    } catch (error) {
+      console.error('Error initializing audio:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    const init = async () => {
+      try {
+        await initializeAudio();
+      } catch (error) {
+        console.error('Failed to initialize audio:', error);
+      }
+    };
+    init();
+  }, [initializeAudio]);
 
   // Handle first user interaction
   const handleFirstInteraction = useCallback(() => {
@@ -408,26 +422,10 @@ export default function EMDRProcessor() {
     };
   }, [handleFirstInteraction]);
 
-  // Connect audio element to context
-  useEffect(() => {
-    if (!audioPlayerRef.current || !audioContextRef.current.context || audioContextRef.current.source) {
-      return;
-    }
-
-    try {
-      const source = audioContextRef.current.context.createMediaElementSource(audioPlayerRef.current);
-      source.connect(audioContextRef.current.gainNode!);
-      audioContextRef.current.source = source;
-      console.log('Audio source connected to context');
-    } catch (error) {
-      console.error('Failed to connect audio to context:', error);
-    }
-  }, []);
-
   // Handle pan value changes
   useEffect(() => {
-    if (audioContextRef.current.panner) {
-      audioContextRef.current.panner.pan.value = panValue;
+    if (audioEngineRef.current) {
+      audioEngineRef.current.setPan(panValue);
     }
   }, [panValue]);
 
@@ -435,7 +433,7 @@ export default function EMDRProcessor() {
   const drawTarget = useCallback((ctx: CanvasRenderingContext2D, x: number, y: number) => {
     // Apply visual intensity to color
     const color = targetColor;
-    const opacity = 0.3 + (visualIntensity * 0.7); // Ensure minimum visibility of 30%
+    const opacity = visualIntensity; // Use visualIntensity directly as it's already in 0-1 range
     ctx.fillStyle = color;
     ctx.globalAlpha = opacity;
     
@@ -450,14 +448,37 @@ export default function EMDRProcessor() {
     }
     
     // Draw shape based on targetShape
-    if (targetShape === 'circle') {
-      ctx.beginPath();
-      ctx.arc(x, y, targetSize / 2, 0, Math.PI * 2);
-      ctx.fill();
-    } else {
-      // Square
-      const halfSize = targetSize / 2;
-      ctx.fillRect(x - halfSize, y - halfSize, targetSize, targetSize);
+    const halfSize = targetSize / 2;
+    
+    switch (targetShape) {
+      case 'circle':
+        ctx.beginPath();
+        ctx.arc(x, y, halfSize, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+        
+      case 'square':
+        ctx.fillRect(x - halfSize, y - halfSize, targetSize, targetSize);
+        break;
+        
+      case 'triangle':
+        ctx.beginPath();
+        ctx.moveTo(x, y - halfSize);
+        ctx.lineTo(x + halfSize, y + halfSize);
+        ctx.lineTo(x - halfSize, y + halfSize);
+        ctx.closePath();
+        ctx.fill();
+        break;
+        
+      case 'diamond':
+        ctx.beginPath();
+        ctx.moveTo(x, y - halfSize);
+        ctx.lineTo(x + halfSize, y);
+        ctx.lineTo(x, y + halfSize);
+        ctx.lineTo(x - halfSize, y);
+        ctx.closePath();
+        ctx.fill();
+        break;
     }
     
     // Reset shadow and opacity
@@ -480,15 +501,12 @@ export default function EMDRProcessor() {
     const progress = (timestamp % speed) / speed;
     
     let x;
-    if (targetMovementPattern === 'ping-pong') {
-      // Ping-pong pattern
-      const normalizedProgress = progress < 0.5 ? progress * 2 : 2 - (progress * 2);
-      x = canvas.width * 0.1 + (canvas.width * 0.8 * normalizedProgress);
+    if (targetShape === 'circle') {
+      // Circle
+      x = canvas.width * 0.5 + canvas.width * 0.5 * Math.cos(2 * Math.PI * progress);
     } else {
-      // Sine pattern
-      const amplitude = canvas.width * 0.4; // 40% of screen width
-      const frequency = 2 * Math.PI; // One complete sine wave per cycle
-      x = (canvas.width / 2) + amplitude * Math.sin(frequency * progress);
+      // Square
+      x = canvas.width * 0.5 + canvas.width * 0.5 * Math.cos(2 * Math.PI * progress);
     }
     
     const y = canvas.height / 2;
@@ -500,11 +518,25 @@ export default function EMDRProcessor() {
     const normalizedPan = ((x / canvas.width) * 2) - 1;
     setPanValue(normalizedPan);
     
+    // Play click sound at extreme points
+    if (audioEngineRef.current && audioMode === 'click') {
+      const centerX = canvas.width / 2;
+      const halfWidth = canvas.width * 0.5;
+      const threshold = 5; // pixels from the edge to trigger sound
+      
+      // Check if we're at the extreme left or right
+      if (Math.abs(x - (centerX - halfWidth)) < threshold) {
+        audioEngineRef.current.playContactSound(false); // Left click
+      } else if (Math.abs(x - (centerX + halfWidth)) < threshold) {
+        audioEngineRef.current.playContactSound(true); // Right click
+      }
+    }
+    
     // Request next frame if still playing
     if (isPlaying) {
       animationIdRef.current = requestAnimationFrame(animate);
     }
-  }, [isPlaying, speed, targetMovementPattern, drawTarget]);
+  }, [isPlaying, speed, targetShape, drawTarget, audioMode]);
 
   // Animation control functions
   const startAnimation = useCallback(() => {
@@ -616,31 +648,73 @@ export default function EMDRProcessor() {
     };
   }, [timeRemaining, isPlaying, audioTrackConfig.sessionDuration]);
 
-  // Update togglePlayPause to handle timer
+  // Handle audio mode changes
+  const handleAudioModeChange = async (mode: 'click' | 'track') => {
+    try {
+      if (audioEngineRef.current) {
+        audioEngineRef.current.setAudioMode(mode);
+        setAudioMode(mode);
+        
+        if (mode === 'track' && selectedAudio?.path) {
+          if (audioPlayerRef.current) {
+            audioPlayerRef.current.src = selectedAudio.path;
+            await audioPlayerRef.current.load();
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error changing audio mode:', error);
+      setAudioError(error instanceof Error ? error.message : 'Failed to change audio mode');
+    }
+  };
+
+  // Update togglePlayPause to handle audio context resumption
   const togglePlayPause = async () => {
     try {
       if (!isPlaying) {
-        if (audioEngineRef.current) {
-          const success = await audioEngineRef.current.startPlayback();
-          if (!success) {
-            console.warn('Failed to start audio playback, but continuing with visual target');
-          }
+        // Make sure we have an audio engine
+        if (!audioEngineRef.current) {
+          console.error('AudioEngine not initialized');
+          setAudioError('Audio engine not initialized');
+          return;
         }
+
+        // Resume audio context
+        await audioEngineRef.current.resumeContext();
+        console.log('Audio context resumed');
+
+        // Start playback
+        const success = await audioEngineRef.current.startPlayback();
+        console.log('Playback start result:', success);
+
+        if (!success) {
+          console.warn('Failed to start audio playback, but continuing with visual target');
+          setAudioError('Failed to start audio playback');
+        } else {
+          setAudioError(null);
+        }
+
+        // Update state
         setIsPlaying(true);
-        setTimeRemaining(audioTrackConfig.sessionDuration); // Start the timer
+        setTimeRemaining(audioTrackConfig.sessionDuration);
         setA11yMessage('Session started. Visual target moving.');
         startAnimation();
       } else {
+        // Stop playback
         if (audioEngineRef.current) {
           audioEngineRef.current.stopAll();
+          console.log('Playback stopped');
         }
+
+        // Update state
         setIsPlaying(false);
-        setTimeRemaining(null); // Reset the timer
+        setTimeRemaining(null);
         setA11yMessage('Session paused. Visual target stopped.');
         stopAnimation();
       }
     } catch (error) {
-      console.warn('Error in audio playback:', error);
+      console.error('Error in audio playback:', error);
+      setAudioError(error instanceof Error ? error.message : 'Error in audio playback');
       setIsPlaying(false);
       setTimeRemaining(null);
     }
@@ -653,87 +727,124 @@ export default function EMDRProcessor() {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Current settings for the unified settings component
-  const currentSettings = {
-    speed: 1000, // Default speed
-    freqLeft: 440, // A4
-    freqRight: 480, // Higher tone
-    targetSize,
-    visualIntensity: 1,
-    sessionDuration: audioTrackConfig.sessionDuration,
-    oscillatorType: audioTrackConfig.oscillatorType as 'sine' | 'square' | 'sawtooth' | 'triangle',
-    targetColor,
-    targetShape,
-    targetHasGlow,
-    targetMovementPattern,
-    isDarkMode,
-    audioMode,
-    bpm: audioTrackConfig.bpm,
-    panWidthPercent,
-  };
+  // Handle file upload
+  const handleAudioUpload = useCallback(async (file: File) => {
+    try {
+      const objectUrl = URL.createObjectURL(file);
+      const newAudio: AudioFile = {
+        id: Date.now().toString(),
+        name: file.name,
+        lastUsed: new Date().toLocaleString(),
+        objectUrl
+      };
+      
+      setSelectedAudio(newAudio);
+      setAudioFiles(prev => [...prev, newAudio]);
+      
+      if (audioPlayerRef.current) {
+        audioPlayerRef.current.src = objectUrl;
+        await audioPlayerRef.current.load();
+      }
+      
+      setA11yMessage(`Audio file ${file.name} loaded successfully`);
+    } catch (error) {
+      console.error('Error uploading audio file:', error);
+      setA11yMessage('Error uploading audio file');
+    }
+  }, []);
 
-  // Handle setting changes
-  const handleSettingChange = (setting: string, value: unknown) => {
+  // Handle setting changes with simplified options
+  const handleSettingChange = async (setting: string, value: unknown) => {
     switch (setting) {
       case 'audioMode':
-        setAudioMode(value as AudioMode);
-        break;
-      case 'panWidthPercent':
-        setPanWidthPercent(value as number);
-        break;
-      case 'bpm':
-        setAudioTrackConfig(prev => ({ ...prev, bpm: value as number }));
-        break;
-      case 'sessionDuration':
-        setAudioTrackConfig(prev => ({ ...prev, sessionDuration: value as number }));
-        break;
-      case 'oscillatorType':
-        setAudioTrackConfig(prev => ({ ...prev, oscillatorType: value as OscillatorType }));
-        break;
-      case 'volume':
-        setAudioTrackConfig(prev => ({ ...prev, volume: value as number }));
-        break;
-      case 'targetSize':
-        setTargetSize(value as number);
+        setAudioMode(value as typeof audioMode);
         break;
       case 'visualIntensity':
         setVisualIntensity(value as number);
         break;
-      case 'targetColor':
-        setTargetColor(value as string);
-        break;
       case 'targetShape':
-        setTargetShape(value as 'circle' | 'square');
-        break;
-      case 'targetHasGlow':
-        setTargetHasGlow(value as boolean);
-        break;
-      case 'targetMovementPattern':
-        setTargetMovementPattern(value as 'ping-pong' | 'sine');
+        setTargetShape(value as typeof targetShape);
         break;
       case 'isDarkMode':
         setIsDarkMode(value as boolean);
+        localStorage.setItem('theme', value ? 'dark' : 'light');
+        if (value) {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
         break;
-      case 'speed':
-        setSpeed(value as number);
+      case 'bpm':
+        setBpm(value as number);
         break;
-      case 'freqLeft':
-        setFreqLeft(value as number);
+      case 'leftClickSound':
+      case 'rightClickSound': {
+        const file = value as File;
+        if (!file) return;
+
+        try {
+          // Create object URL for the file
+          const objectUrl = URL.createObjectURL(file);
+          
+          // Update the contact sound config
+          if (audioEngineRef.current) {
+            const config = {
+              ...contactSoundConfig,
+              [setting === 'leftClickSound' ? 'leftSamplePath' : 'rightSamplePath']: objectUrl
+            };
+            audioEngineRef.current.updateContactSoundConfig(config);
+            
+            // Save to localStorage
+            const savedSounds = JSON.parse(localStorage.getItem('customClickSounds') || '{}');
+            savedSounds[setting] = {
+              name: file.name,
+              type: file.type,
+              lastModified: file.lastModified,
+              objectUrl
+            };
+            localStorage.setItem('customClickSounds', JSON.stringify(savedSounds));
+            
+            setA11yMessage(`${setting === 'leftClickSound' ? 'Left' : 'Right'} click sound updated`);
+          }
+        } catch (error) {
+          console.error(`Error updating ${setting}:`, error);
+          setAudioError(`Failed to update ${setting}`);
+        }
         break;
-      case 'freqRight':
-        setFreqRight(value as number);
-        break;
+      }
       default:
         console.warn(`Unknown setting: ${setting}`);
     }
   };
 
-  // Update audio engine when frequencies change
+  // Load saved custom click sounds on mount
   useEffect(() => {
-    if (audioEngineRef.current) {
-      audioEngineRef.current.updateFrequencies(freqLeft, freqRight);
+    try {
+      const savedSounds = JSON.parse(localStorage.getItem('customClickSounds') || '{}');
+      
+      if (audioEngineRef.current && (savedSounds.leftClickSound || savedSounds.rightClickSound)) {
+        const config = { ...contactSoundConfig };
+        
+        if (savedSounds.leftClickSound) {
+          config.leftSamplePath = savedSounds.leftClickSound.objectUrl;
+        }
+        if (savedSounds.rightClickSound) {
+          config.rightSamplePath = savedSounds.rightClickSound.objectUrl;
+        }
+        
+        audioEngineRef.current.updateContactSoundConfig(config);
+      }
+    } catch (error) {
+      console.error('Error loading saved click sounds:', error);
     }
-  }, [freqLeft, freqRight]);
+  }, []);
+
+  const handleBpmChange = (newBpm: number) => {
+    setBpm(newBpm);
+    if (audioEngineRef.current) {
+      audioEngineRef.current.updateAudioTrackConfig({ volume: audioTrackConfig.volume });
+    }
+  };
 
   return (
     <div className="relative min-h-screen">
@@ -787,8 +898,21 @@ export default function EMDRProcessor() {
           isOpen={isMenuOpen}
           onClose={() => setIsMenuOpen(false)}
           isSessionActive={isPlaying}
-          settings={currentSettings}
+          settings={{
+            visualIntensity,
+            targetShape,
+            audioMode,
+            isDarkMode,
+            bpm
+          }}
           onSettingChange={handleSettingChange}
+          audioMode={audioMode}
+          onAudioModeChange={handleAudioModeChange}
+          bpm={bpm}
+          onBpmChange={handleBpmChange}
+          onAudioSelect={setSelectedAudio}
+          selectedAudio={selectedAudio}
+          audioMetadata={null} // TODO: Add audio metadata handling
         />
 
         {/* Controls - z-20 to be above canvas but below menu */}

@@ -2,6 +2,9 @@
 let audioContext: AudioContext | null = null;
 let audioContextInitialized = false;
 
+// Map to store MediaElementSource nodes for each audio element
+const mediaElementSources = new WeakMap<HTMLAudioElement, MediaElementAudioSourceNode>();
+
 // Add debugging flag to help troubleshoot
 const DEBUG_AUDIO = true;
 
@@ -12,6 +15,17 @@ export const getAudioContext = (): AudioContext => {
     if (DEBUG_AUDIO) console.log('New AudioContext created with state:', audioContext.state);
   }
   return audioContext;
+};
+
+export const getMediaElementSource = (audioElement: HTMLAudioElement): MediaElementAudioSourceNode => {
+  let source = mediaElementSources.get(audioElement);
+  if (!source) {
+    const ctx = getAudioContext();
+    source = ctx.createMediaElementSource(audioElement);
+    mediaElementSources.set(audioElement, source);
+    if (DEBUG_AUDIO) console.log('Created new MediaElementSource for audio element');
+  }
+  return source;
 };
 
 export const resumeAudioContext = async (): Promise<void> => {
@@ -147,8 +161,8 @@ export const createAudioProcessor = async (
     await resumeAudioContext();
     
     try {
-      // Create Web Audio nodes
-      source = ctx.createMediaElementSource(audioElement);
+      // Get or create the MediaElementSource
+      source = getMediaElementSource(audioElement);
       gainNode = ctx.createGain();
       
       // Check if StereoPannerNode is supported

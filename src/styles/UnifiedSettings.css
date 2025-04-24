@@ -1,0 +1,91 @@
+.unified-settings {
+  padding: 1rem;
+  background: var(--surface-color);
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.settings-section {
+  margin-bottom: 1.5rem;
+}
+
+.settings-section h2 {
+  font-size: 1.2rem;
+  margin-bottom: 0.75rem;
+  color: var(--text-primary);
+}
+
+.mode-selector {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.mode-selector button {
+  flex: 1;
+  padding: 0.5rem;
+  border: 2px solid var(--primary-color);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.mode-selector button.active {
+  background: var(--primary-color);
+  color: white;
+}
+
+.bpm-control {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.bpm-control label {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.bpm-control input[type="range"] {
+  width: 100%;
+  height: 4px;
+  background: var(--primary-color);
+  border-radius: 2px;
+  outline: none;
+  -webkit-appearance: none;
+}
+
+.bpm-control input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  background: white;
+  border: 2px solid var(--primary-color);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.bpm-control input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
+}
+
+.audio-metadata {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background: var(--surface-secondary);
+  border-radius: 4px;
+}
+
+.audio-metadata h3 {
+  font-size: 1rem;
+  margin-bottom: 0.5rem;
+  color: var(--text-primary);
+}
+
+.audio-metadata p {
+  margin: 0.25rem 0;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+} 

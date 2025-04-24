@@ -28,7 +28,7 @@ const EMDRSession: React.FC<EMDRSessionProps> = ({
   const [visualIntensity, setVisualIntensity] = useState(0.8); // default to 80%
   const [targetSize, setTargetSize] = useState(50); // default size in pixels
   const [targetColor, setTargetColor] = useState('#ff0000'); // default red
-  const [targetShape, setTargetShape] = useState<'circle' | 'square'>('circle');
+  const [targetShape, setTargetShape] = useState<'circle' | 'square' | 'triangle' | 'diamond' | 'star'>('circle');
   const [targetHasGlow, setTargetHasGlow] = useState(true);
   const [targetMovementPattern, setTargetMovementPattern] = useState<'ping-pong' | 'sine'>('ping-pong');
   const [sessionDuration, setSessionDuration] = useState(0);
@@ -138,7 +138,7 @@ const EMDRSession: React.FC<EMDRSessionProps> = ({
         setTargetColor(value as string);
         break;
       case 'targetShape':
-        setTargetShape(value as 'circle' | 'square');
+        setTargetShape(value as 'circle' | 'square' | 'triangle' | 'diamond' | 'star');
         break;
       case 'targetHasGlow':
         setTargetHasGlow(value as boolean);

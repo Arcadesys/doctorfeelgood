@@ -10,20 +10,20 @@ const config: ThemeConfig = {
 const theme = extendTheme({
   config,
   styles: {
-    global: {
+    global: (props: { colorMode: 'light' | 'dark' }) => ({
       body: {
-        bg: 'gray.50',
-        color: 'gray.800',
+        bg: props.colorMode === 'dark' ? 'gray.900' : 'gray.50',
+        color: props.colorMode === 'dark' ? 'white' : 'gray.800',
       },
-    },
+    }),
   },
   components: {
     Drawer: {
-      baseStyle: {
+      baseStyle: (props: { colorMode: 'light' | 'dark' }) => ({
         dialog: {
-          bg: 'white',
+          bg: props.colorMode === 'dark' ? 'gray.800' : 'white',
         },
-      },
+      }),
     },
   },
 })

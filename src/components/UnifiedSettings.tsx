@@ -1,5 +1,5 @@
 import React from 'react';
-import { Drawer, DrawerOverlay, DrawerContent, DrawerCloseButton, DrawerHeader, DrawerBody, VStack, Box, Heading, FormControl, FormLabel, Select, Slider, SliderTrack, SliderThumb } from '@chakra-ui/react';
+import { Drawer, DrawerOverlay, DrawerContent, DrawerCloseButton, DrawerHeader, DrawerBody, VStack, Box, Heading, FormControl, FormLabel, Select, Slider, SliderTrack, SliderThumb, SliderFilledTrack, useColorMode } from '@chakra-ui/react';
 
 interface UnifiedSettingsProps {
   isOpen: boolean;
@@ -54,6 +54,8 @@ const UnifiedSettings: React.FC<UnifiedSettingsProps> = ({
   selectedAudio,
   audioMetadata
 }) => {
+  const { colorMode, toggleColorMode } = useColorMode();
+
   if (!isOpen) return null;
 
   const handleAudioFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -383,11 +385,11 @@ const UnifiedSettings: React.FC<UnifiedSettingsProps> = ({
             <section>
               <h3 className="text-lg font-semibold mb-3">Theme</h3>
               <button
-                onClick={() => onSettingChange('isDarkMode', !settings.isDarkMode)}
+                onClick={toggleColorMode}
                 className="w-full py-2 px-4 rounded bg-gray-700 hover:bg-gray-600 flex items-center justify-center gap-2"
               >
-                <span>{settings.isDarkMode ? '🌙' : '☀️'}</span>
-                <span>{settings.isDarkMode ? 'Dark Mode' : 'Light Mode'}</span>
+                <span>{colorMode === 'dark' ? '🌙' : '☀️'}</span>
+                <span>{colorMode === 'dark' ? 'Dark Mode' : 'Light Mode'}</span>
               </button>
             </section>
           </VStack>

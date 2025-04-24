@@ -23,12 +23,14 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <ColorModeScript initialColorMode={theme.config.initialColorMode} />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
         style={{ overscrollBehaviorX: "auto" }}
       >
         <CacheProvider>
-          <ColorModeScript initialColorMode={theme.config.initialColorMode} />
           <ChakraProvider theme={theme}>
             {children}
           </ChakraProvider>

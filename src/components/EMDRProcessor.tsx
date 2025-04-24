@@ -757,7 +757,7 @@ export default function EMDRProcessor() {
     }
   }, []);
 
-  // Handle setting changes with simplified options
+  // Handle setting changes
   const handleSettingChange = async (setting: string, value: unknown) => {
     switch (setting) {
       case 'audioMode':
@@ -777,6 +777,12 @@ export default function EMDRProcessor() {
         break;
       case 'movementGuideEnabled':
         setMovementGuideEnabled(value as boolean);
+        break;
+      case 'visualIntensity':
+        setVisualIntensity(value as number);
+        break;
+      case 'targetShape':
+        setTargetShape(value as 'circle' | 'square' | 'triangle' | 'diamond' | 'star');
         break;
       default:
         console.warn(`Unknown setting: ${setting}`);
@@ -918,9 +924,9 @@ export default function EMDRProcessor() {
             audioMode,
             isDarkMode,
             bpm,
-            audioFeedbackEnabled: true,
-            visualGuideEnabled: true,
-            movementGuideEnabled: true
+            audioFeedbackEnabled,
+            visualGuideEnabled,
+            movementGuideEnabled
           }}
           onSettingChange={handleSettingChange}
           audioMode={audioMode}

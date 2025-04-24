@@ -7,6 +7,8 @@ import {
   ContactSoundConfig
 } from '../lib/audioEngine';
 import UnifiedSettings from './UnifiedSettings';
+import VisualTarget from './VisualTarget';
+import EMDRTarget from './EMDRTarget';
 import { getAudioContext, getMediaElementSource, resumeAudioContext } from '../utils/audioUtils';
 
 // Simple version without the File System Access API
@@ -67,7 +69,7 @@ export default function EMDRProcessor() {
   const [panValue, setPanValue] = useState(0);
   const [targetHasGlow] = useState(true); // Always enabled for better visibility
   const [targetSize] = useState(50); // Fixed size
-  const [targetColor] = useState('#ffffff'); // Fixed color
+  const [targetColor, setTargetColor] = useState('#ffffff'); // Add targetColor state
 
   // Refs
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -760,14 +762,20 @@ export default function EMDRProcessor() {
   // Handle setting changes
   const handleSettingChange = async (setting: string, value: unknown) => {
     switch (setting) {
-      case 'audioMode':
-        setAudioMode(value as 'click' | 'track');
+      case 'visualIntensity':
+        setVisualIntensity(value as number);
         break;
-      case 'bpm':
-        setBpm(value as number);
+      case 'targetShape':
+        setTargetShape(value as 'circle' | 'square' | 'triangle' | 'diamond' | 'star');
         break;
       case 'isDarkMode':
         setIsDarkMode(value as boolean);
+        break;
+      case 'audioMode':
+        await handleAudioModeChange(value as 'click' | 'track');
+        break;
+      case 'bpm':
+        handleBpmChange(value as number);
         break;
       case 'audioFeedbackEnabled':
         setAudioFeedbackEnabled(value as boolean);
@@ -778,14 +786,14 @@ export default function EMDRProcessor() {
       case 'movementGuideEnabled':
         setMovementGuideEnabled(value as boolean);
         break;
-      case 'visualIntensity':
-        setVisualIntensity(value as number);
+      case 'targetHasGlow':
+        // This is handled by the state variable
         break;
-      case 'targetShape':
-        setTargetShape(value as 'circle' | 'square' | 'triangle' | 'diamond' | 'star');
+      case 'targetColor':
+        setTargetColor(value as string);
         break;
       default:
-        console.warn(`Unknown setting: ${setting}`);
+        console.log(`Setting ${setting} changed to ${value}`);
     }
   };
 
@@ -867,7 +875,7 @@ export default function EMDRProcessor() {
   };
 
   return (
-    <div className="relative min-h-screen">
+    <div className={`relative w-full h-screen ${isDarkMode ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'}`}>
       {/* Background layer */}
       <div className={`fixed inset-0 ${isDarkMode ? 'bg-gray-900' : 'bg-white'}`} />
       
@@ -919,22 +927,26 @@ export default function EMDRProcessor() {
           onClose={() => setIsMenuOpen(false)}
           isSessionActive={isPlaying}
           settings={{
-            visualIntensity,
+            visualIntensity: visualIntensity * 100,
             targetShape,
             audioMode,
             isDarkMode,
             bpm,
             audioFeedbackEnabled,
             visualGuideEnabled,
-            movementGuideEnabled
+            movementGuideEnabled,
+            targetHasGlow,
+            targetColor,
           }}
           onSettingChange={handleSettingChange}
           audioMode={audioMode}
           onAudioModeChange={handleAudioModeChange}
           bpm={bpm}
           onBpmChange={handleBpmChange}
-          onAudioSelect={setSelectedAudio}
-          selectedAudio={selectedAudio}
+          onAudioSelect={(audio) => {
+            // Handle audio selection
+          }}
+          selectedAudio={selectedAudio?.name || ''}
           audioMetadata={audioMetadata}
         />
 
@@ -1007,6 +1019,30 @@ export default function EMDRProcessor() {
         <div className="sr-only" aria-live="polite">
           {a11yMessage}
         </div>
+
+        {/* Show either the VisualTarget or EMDRTarget, but not both */}
+        {isPlaying ? (
+          <EMDRTarget
+            isActive={true}
+            speed={speed}
+            size={targetSize}
+            color={targetColor}
+            shape={targetShape}
+            hasGlow={targetHasGlow}
+            movementPattern="ping-pong"
+            intensity={1}
+            visualIntensity={visualIntensity * 100}
+          />
+        ) : (
+          <VisualTarget
+            isActive={false}
+            settings={{
+              visualIntensity: visualIntensity * 100,
+              targetShape,
+              targetColor,
+            }}
+          />
+        )}
       </div>
     </div>
   );

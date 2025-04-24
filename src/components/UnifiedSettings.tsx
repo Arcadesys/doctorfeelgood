@@ -1,5 +1,5 @@
 import React from 'react';
-import { Drawer, DrawerOverlay, DrawerContent, DrawerCloseButton, DrawerHeader, DrawerBody, VStack, Box, Heading, FormControl, FormLabel, Select, Slider, SliderTrack, SliderThumb, SliderFilledTrack, useColorMode } from '@chakra-ui/react';
+import { Drawer, DrawerOverlay, DrawerContent, DrawerCloseButton, DrawerHeader, DrawerBody, VStack, Box, Heading, FormControl, FormLabel, Select, Slider, SliderTrack, SliderThumb, SliderFilledTrack, useColorMode, Switch } from '@chakra-ui/react';
 
 interface UnifiedSettingsProps {
   isOpen: boolean;
@@ -14,6 +14,8 @@ interface UnifiedSettingsProps {
     audioFeedbackEnabled: boolean;
     visualGuideEnabled: boolean;
     movementGuideEnabled: boolean;
+    targetHasGlow: boolean;
+    targetColor: string;
   };
   onSettingChange: (setting: string, value: unknown) => void;
   onAudioUpload?: (file: File) => void;
@@ -25,19 +27,6 @@ interface UnifiedSettingsProps {
   selectedAudio: string;
   audioMetadata: AudioMetadata | null;
 }
-
-const SHAPES = [
-  { id: 'circle', icon: '⭕', label: 'Circle' },
-  { id: 'square', icon: '⬛', label: 'Square' },
-  { id: 'triangle', icon: '🔺', label: 'Triangle' },
-  { id: 'diamond', icon: '💠', label: 'Diamond' },
-] as const;
-
-const INTENSITIES = [
-  { id: 'low', value: 0.3, label: 'Low' },
-  { id: 'medium', value: 0.6, label: 'Medium' },
-  { id: 'high', value: 1, label: 'High' },
-] as const;
 
 const UnifiedSettings: React.FC<UnifiedSettingsProps> = ({
   isOpen,
@@ -113,51 +102,29 @@ const UnifiedSettings: React.FC<UnifiedSettingsProps> = ({
                     <SliderThumb />
                   </Slider>
                 </FormControl>
+                <FormControl>
+                  <FormLabel>Target Color</FormLabel>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={settings.targetColor || '#ffffff'}
+                      onChange={(e) => onSettingChange('targetColor', e.target.value)}
+                      className="w-10 h-10 rounded cursor-pointer"
+                      aria-label="Select target color"
+                    />
+                    <span className="text-sm">{settings.targetColor || '#ffffff'}</span>
+                  </div>
+                </FormControl>
+                <FormControl display="flex" alignItems="center" justifyContent="space-between">
+                  <FormLabel mb="0">Glow Effect</FormLabel>
+                  <Switch
+                    isChecked={settings.targetHasGlow}
+                    onChange={(e) => onSettingChange('targetHasGlow', e.target.checked)}
+                    colorScheme="blue"
+                  />
+                </FormControl>
               </VStack>
             </Box>
-
-            {/* Visual Intensity */}
-            <section>
-              <h3 className="text-lg font-semibold mb-3">Visual Intensity</h3>
-              <div className="flex gap-2">
-                {INTENSITIES.map((intensity) => (
-                  <button
-                    key={intensity.id}
-                    onClick={() => onSettingChange('visualIntensity', intensity.value)}
-                    className={`flex-1 py-2 px-4 rounded ${
-                      settings.visualIntensity === intensity.value
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-700 hover:bg-gray-600'
-                    }`}
-                    aria-pressed={settings.visualIntensity === intensity.value}
-                  >
-                    {intensity.label}
-                  </button>
-                ))}
-              </div>
-            </section>
-
-            {/* Shape Selection */}
-            <section>
-              <h3 className="text-lg font-semibold mb-3">Target Shape</h3>
-              <div className="grid grid-cols-2 gap-2">
-                {SHAPES.map((shape) => (
-                  <button
-                    key={shape.id}
-                    onClick={() => onSettingChange('targetShape', shape.id)}
-                    className={`py-3 px-4 rounded flex items-center justify-center gap-2 ${
-                      settings.targetShape === shape.id
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-700 hover:bg-gray-600'
-                    }`}
-                    aria-pressed={settings.targetShape === shape.id}
-                  >
-                    <span className="text-2xl">{shape.icon}</span>
-                    <span>{shape.label}</span>
-                  </button>
-                ))}
-              </div>
-            </section>
 
             {/* Audio Settings */}
             <section>
@@ -319,65 +286,35 @@ const UnifiedSettings: React.FC<UnifiedSettingsProps> = ({
             <section>
               <h3 className="text-lg font-semibold mb-3">Accessibility Guides</h3>
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <label htmlFor="audioFeedback" className="text-sm">Audio Feedback</label>
-                  <div className="relative inline-flex">
-                    <button
-                      onClick={() => onSettingChange('audioFeedbackEnabled', !settings.audioFeedbackEnabled)}
-                      className={`w-12 h-6 transition-colors duration-200 ease-in-out rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                        settings.audioFeedbackEnabled ? 'bg-blue-600' : 'bg-gray-600'
-                      }`}
-                      role="switch"
-                      aria-checked={settings.audioFeedbackEnabled}
-                    >
-                      <span
-                        className={`inline-block w-5 h-5 transition-transform duration-200 ease-in-out transform bg-white rounded-full ${
-                          settings.audioFeedbackEnabled ? 'translate-x-6' : 'translate-x-1'
-                        }`}
-                      />
-                    </button>
-                  </div>
-                </div>
+                <FormControl display="flex" alignItems="center" justifyContent="space-between">
+                  <FormLabel htmlFor="audioFeedback" mb="0">Audio Feedback</FormLabel>
+                  <Switch
+                    id="audioFeedback"
+                    isChecked={settings.audioFeedbackEnabled}
+                    onChange={(e) => onSettingChange('audioFeedbackEnabled', e.target.checked)}
+                    colorScheme="blue"
+                  />
+                </FormControl>
 
-                <div className="flex items-center justify-between">
-                  <label htmlFor="visualGuide" className="text-sm">Visual Intensity Guide</label>
-                  <div className="relative inline-flex">
-                    <button
-                      onClick={() => onSettingChange('visualGuideEnabled', !settings.visualGuideEnabled)}
-                      className={`w-12 h-6 transition-colors duration-200 ease-in-out rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                        settings.visualGuideEnabled ? 'bg-blue-600' : 'bg-gray-600'
-                      }`}
-                      role="switch"
-                      aria-checked={settings.visualGuideEnabled}
-                    >
-                      <span
-                        className={`inline-block w-5 h-5 transition-transform duration-200 ease-in-out transform bg-white rounded-full ${
-                          settings.visualGuideEnabled ? 'translate-x-6' : 'translate-x-1'
-                        }`}
-                      />
-                    </button>
-                  </div>
-                </div>
+                <FormControl display="flex" alignItems="center" justifyContent="space-between">
+                  <FormLabel htmlFor="visualGuide" mb="0">Visual Intensity Guide</FormLabel>
+                  <Switch
+                    id="visualGuide"
+                    isChecked={settings.visualGuideEnabled}
+                    onChange={(e) => onSettingChange('visualGuideEnabled', e.target.checked)}
+                    colorScheme="blue"
+                  />
+                </FormControl>
 
-                <div className="flex items-center justify-between">
-                  <label htmlFor="movementGuide" className="text-sm">Movement Pattern Guide</label>
-                  <div className="relative inline-flex">
-                    <button
-                      onClick={() => onSettingChange('movementGuideEnabled', !settings.movementGuideEnabled)}
-                      className={`w-12 h-6 transition-colors duration-200 ease-in-out rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                        settings.movementGuideEnabled ? 'bg-blue-600' : 'bg-gray-600'
-                      }`}
-                      role="switch"
-                      aria-checked={settings.movementGuideEnabled}
-                    >
-                      <span
-                        className={`inline-block w-5 h-5 transition-transform duration-200 ease-in-out transform bg-white rounded-full ${
-                          settings.movementGuideEnabled ? 'translate-x-6' : 'translate-x-1'
-                        }`}
-                      />
-                    </button>
-                  </div>
-                </div>
+                <FormControl display="flex" alignItems="center" justifyContent="space-between">
+                  <FormLabel htmlFor="movementGuide" mb="0">Movement Pattern Guide</FormLabel>
+                  <Switch
+                    id="movementGuide"
+                    isChecked={settings.movementGuideEnabled}
+                    onChange={(e) => onSettingChange('movementGuideEnabled', e.target.checked)}
+                    colorScheme="blue"
+                  />
+                </FormControl>
               </div>
             </section>
 

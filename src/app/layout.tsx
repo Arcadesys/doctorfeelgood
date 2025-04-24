@@ -9,11 +9,13 @@ import theme from '@/theme'
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
+  display: 'swap',
 });
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+  display: 'swap',
 });
 
 export default function RootLayout({
@@ -22,12 +24,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
       <head>
         <ColorModeScript initialColorMode={theme.config.initialColorMode} />
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className="antialiased"
         style={{ overscrollBehaviorX: "auto" }}
       >
         <CacheProvider>

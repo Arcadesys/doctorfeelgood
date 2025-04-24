@@ -6,11 +6,12 @@ interface VisualTargetProps {
   settings: {
     visualIntensity: number;
     targetShape: 'circle' | 'square' | 'triangle' | 'diamond' | 'star';
+    targetColor: string;
   };
 }
 
 const VisualTarget: React.FC<VisualTargetProps> = ({ isActive, settings }) => {
-  const { visualIntensity, targetShape } = settings;
+  const { visualIntensity, targetShape, targetColor } = settings;
   
   const getShape = () => {
     switch (targetShape) {
@@ -38,9 +39,9 @@ const VisualTarget: React.FC<VisualTargetProps> = ({ isActive, settings }) => {
       style={{
         width: `${size}px`,
         height: `${size}px`,
-        backgroundColor: isActive ? 'rgba(255, 255, 255, 0.8)' : 'rgba(255, 255, 255, 0.3)',
+        backgroundColor: isActive ? targetColor : targetColor.replace(')', ', 0.3)').replace('rgb', 'rgba'),
         opacity: isActive ? opacity : opacity * 0.5,
-        boxShadow: isActive ? '0 0 20px rgba(255, 255, 255, 0.5)' : 'none',
+        boxShadow: isActive ? `0 0 20px ${targetColor}` : 'none',
       }}
       role="presentation"
       aria-hidden="true"

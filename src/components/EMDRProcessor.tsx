@@ -33,6 +33,12 @@ interface EMDRTrackConfig {
   volume: number;
 }
 
+// Add AudioMetadata type at the top of the file
+interface AudioMetadata {
+  duration: number;
+  sampleRate: number;
+}
+
 // Remove empty interface and unused WebkitAudioContext
 declare global {
   interface Window {
@@ -42,25 +48,40 @@ declare global {
 
 export default function EMDRProcessor() {
   // State variables
-  const [audioMode, setAudioMode] = useState<'click' | 'track'>('click');
-  const [panValue, setPanValue] = useState(0);
-  const [a11yMessage, setA11yMessage] = useState('');
-  const [isDarkMode, setIsDarkMode] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
-  const [selectedAudio, setSelectedAudio] = useState<AudioFile | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [animationFrameId, setAnimationFrameId] = useState<number | null>(null);
+  const [visualIntensity, setVisualIntensity] = useState(0.5);
+  const [targetShape, setTargetShape] = useState<'circle' | 'square' | 'triangle' | 'diamond' | 'star'>('circle');
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [audioMode, setAudioMode] = useState<'click' | 'track'>('click');
+  const [bpm, setBpm] = useState(60);
+  const [selectedAudio, setSelectedAudio] = useState<AudioFile | null>(null);
+  const [audioMetadata, setAudioMetadata] = useState<AudioMetadata | null>(null);
+  const [audioFeedbackEnabled, setAudioFeedbackEnabled] = useState(true);
+  const [visualGuideEnabled, setVisualGuideEnabled] = useState(true);
+  const [movementGuideEnabled, setMovementGuideEnabled] = useState(true);
+  const [a11yMessage, setA11yMessage] = useState<string | null>(null);
   const [audioError, setAudioError] = useState<string | null>(null);
-  
-  // Visual settings with simplified options
-  const [targetShape, setTargetShape] = useState<'circle' | 'square' | 'triangle' | 'diamond'>('circle');
-  const [visualIntensity, setVisualIntensity] = useState(0.6); // Medium intensity by default
+  const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
+  const [animationFrameId, setAnimationFrameId] = useState<number | null>(null);
+  const [panValue, setPanValue] = useState(0);
   const [targetHasGlow] = useState(true); // Always enabled for better visibility
   const [targetSize] = useState(50); // Fixed size
   const [targetColor] = useState('#ffffff'); // Fixed color
-  const [bpm, setBpm] = useState(60);
-  
+
+  // Refs
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const audioEngineRef = useRef<AudioEngine | null>(null);
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const animationRef = useRef<number | null>(null);
+  const canvasSizedRef = useRef<boolean>(false);
+  const animationIdRef = useRef<number | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuOpenSoundRef = useRef<HTMLAudioElement>(null);
+  const menuCloseSoundRef = useRef<HTMLAudioElement>(null);
+  const playStatusSoundRef = useRef<HTMLAudioElement>(null);
+
   // Convert BPM to milliseconds for animation speed
   const speed = Math.round(60000 / bpm); // 60000ms = 1 minute
   
@@ -82,11 +103,6 @@ export default function EMDRProcessor() {
     enabled: true
   });
   
-  // Animation state
-  const animationIdRef = useRef<number | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const canvasSizedRef = useRef<boolean>(false);
-  
   // Audio context state
   const audioContextRef = useRef<AudioContextState>({
     context: null,
@@ -94,24 +110,6 @@ export default function EMDRProcessor() {
     panner: null,
     gainNode: null
   });
-  
-  // Audio engine reference
-  const audioEngineRef = useRef<AudioEngine | null>(null);
-  
-  const menuRef = useRef<HTMLDivElement>(null);
-  const menuOpenSoundRef = useRef<HTMLAudioElement>(null);
-  const menuCloseSoundRef = useRef<HTMLAudioElement>(null);
-  const audioPlayerRef = useRef<HTMLAudioElement>(null);
-  const playStatusSoundRef = useRef<HTMLAudioElement>(null);
-  
-  // Refs
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-  
-  // Add audioMetadata state
-  const [audioMetadata, setAudioMetadata] = useState<{
-    duration: number;
-    sampleRate: number;
-  } | null>(null);
   
   // Draw visual target helper function
   const drawVisualTarget = useCallback(() => {
@@ -763,114 +761,23 @@ export default function EMDRProcessor() {
   const handleSettingChange = async (setting: string, value: unknown) => {
     switch (setting) {
       case 'audioMode':
-        setAudioMode(value as typeof audioMode);
-        break;
-      case 'visualIntensity':
-        setVisualIntensity(value as number);
-        break;
-      case 'targetShape':
-        setTargetShape(value as typeof targetShape);
-        break;
-      case 'isDarkMode':
-        setIsDarkMode(value as boolean);
-        localStorage.setItem('theme', value ? 'dark' : 'light');
-        if (value) {
-          document.documentElement.classList.add('dark');
-        } else {
-          document.documentElement.classList.remove('dark');
-        }
+        setAudioMode(value as 'click' | 'track');
         break;
       case 'bpm':
         setBpm(value as number);
         break;
-      case 'leftClickSound':
-      case 'rightClickSound': {
-        const file = value as File;
-        if (!file) return;
-
-        try {
-          // Create object URL for the file
-          const objectUrl = URL.createObjectURL(file);
-          
-          // Update the contact sound config
-          if (audioEngineRef.current) {
-            const config = {
-              ...contactSoundConfig,
-              [setting === 'leftClickSound' ? 'leftSamplePath' : 'rightSamplePath']: objectUrl
-            };
-            audioEngineRef.current.updateContactSoundConfig(config);
-            
-            // Save to localStorage
-            const savedSounds = JSON.parse(localStorage.getItem('customClickSounds') || '{}');
-            savedSounds[setting] = {
-              name: file.name,
-              type: file.type,
-              lastModified: file.lastModified,
-              objectUrl
-            };
-            localStorage.setItem('customClickSounds', JSON.stringify(savedSounds));
-            
-            setA11yMessage(`${setting === 'leftClickSound' ? 'Left' : 'Right'} click sound updated`);
-          }
-        } catch (error) {
-          console.error(`Error updating ${setting}:`, error);
-          setAudioError(`Failed to update ${setting}`);
-        }
+      case 'isDarkMode':
+        setIsDarkMode(value as boolean);
         break;
-      }
-      case 'audioTrack': {
-        const file = value as File;
-        if (!file) return;
-
-        try {
-          // Create object URL for the file
-          const objectUrl = URL.createObjectURL(file);
-          
-          // Create a new audio element to get metadata
-          const audio = new Audio();
-          audio.src = objectUrl;
-          
-          // Wait for metadata to load
-          await new Promise((resolve, reject) => {
-            audio.addEventListener('loadedmetadata', resolve);
-            audio.addEventListener('error', reject);
-          });
-          
-          // Create new audio file object
-          const newAudio: AudioFile = {
-            id: Date.now().toString(),
-            name: file.name,
-            lastUsed: new Date().toISOString(),
-            objectUrl
-          };
-          
-          // Update audio metadata
-          setAudioMetadata({
-            duration: audio.duration,
-            sampleRate: 44100 // Default sample rate, as we can't get this from the Audio API
-          });
-          
-          // Update selected audio
-          setSelectedAudio(newAudio);
-          
-          // Save to localStorage
-          const savedTracks = JSON.parse(localStorage.getItem('audioTracks') || '[]');
-          savedTracks.push(newAudio);
-          localStorage.setItem('audioTracks', JSON.stringify(savedTracks));
-          
-          // Update audio player source
-          if (audioPlayerRef.current) {
-            audioPlayerRef.current.src = objectUrl;
-            await audioPlayerRef.current.load();
-          }
-          
-          setA11yMessage(`Audio track ${file.name} loaded successfully`);
-        } catch (error) {
-          console.error('Error uploading audio track:', error);
-          setAudioError('Failed to upload audio track');
-        }
+      case 'audioFeedbackEnabled':
+        setAudioFeedbackEnabled(value as boolean);
         break;
-      }
+      case 'visualGuideEnabled':
+        setVisualGuideEnabled(value as boolean);
+        break;
+      case 'movementGuideEnabled':
+        setMovementGuideEnabled(value as boolean);
+        break;
       default:
         console.warn(`Unknown setting: ${setting}`);
     }
@@ -1010,7 +917,10 @@ export default function EMDRProcessor() {
             targetShape,
             audioMode,
             isDarkMode,
-            bpm
+            bpm,
+            audioFeedbackEnabled: true,
+            visualGuideEnabled: true,
+            movementGuideEnabled: true
           }}
           onSettingChange={handleSettingChange}
           audioMode={audioMode}

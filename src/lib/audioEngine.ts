@@ -1,6 +1,7 @@
 // Audio Engine for EMDR Processor
 
 import { getAudioContext, getMediaElementSource, resumeAudioContext } from '../utils/audioUtils';
+import { audioContextManager } from '@/utils/audioContextManager';
 
 export type AudioMode = 'click' | 'track';
 
@@ -52,8 +53,13 @@ export class AudioEngine {
 
   async initialize(audioElement?: HTMLAudioElement): Promise<void> {
     try {
-      // Get the singleton audio context
-      this.audioContext = getAudioContext();
+      // Initialize audio context through manager
+      await audioContextManager.initialize();
+      this.audioContext = audioContextManager.getContext();
+      
+      if (!this.audioContext) {
+        throw new Error('Failed to initialize audio context');
+      }
       
       // Create gain node
       this.gainNode = this.audioContext.createGain();
@@ -70,8 +76,8 @@ export class AudioEngine {
       // Load click samples
       await this.loadClickSamples();
       
-      // Resume audio context
-      await resumeAudioContext();
+      // Resume audio context if needed
+      await audioContextManager.resumeContext();
       
       console.log('AudioEngine initialized successfully');
     } catch (error) {
@@ -145,7 +151,7 @@ export class AudioEngine {
     this.stopAll();
     
     if (this.audioContext) {
-      this.audioContext.close();
+      audioContextManager.cleanup();
       this.audioContext = null;
     }
     

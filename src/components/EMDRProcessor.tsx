@@ -10,6 +10,7 @@ import UnifiedSettings from './UnifiedSettings';
 import VisualTarget from './VisualTarget';
 import EMDRTarget from './EMDRTarget';
 import { getAudioContext, getMediaElementSource, resumeAudioContext } from '../utils/audioUtils';
+import { decimalToPercentage, percentageToDecimal, clampDecimalIntensity } from '@/utils/intensityUtils';
 
 // Simple version without the File System Access API
 type AudioFile = {
@@ -52,7 +53,7 @@ export default function EMDRProcessor() {
   // State variables
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [visualIntensity, setVisualIntensity] = useState(0.5);
+  const [visualIntensity, setVisualIntensity] = useState(clampDecimalIntensity(0.5));
   const [targetShape, setTargetShape] = useState<'circle' | 'square' | 'triangle' | 'diamond' | 'star'>('circle');
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [audioMode, setAudioMode] = useState<'click' | 'track'>('click');
@@ -770,8 +771,7 @@ export default function EMDRProcessor() {
   const handleSettingChange = async (setting: string, value: unknown) => {
     switch (setting) {
       case 'visualIntensity':
-        // Convert back from percentage to decimal for internal state
-        setVisualIntensity((value as number) / 100);
+        setVisualIntensity(clampDecimalIntensity(percentageToDecimal(value as number)));
         break;
       case 'targetShape':
         setTargetShape(value as 'circle' | 'square' | 'triangle' | 'diamond' | 'star');
@@ -932,7 +932,7 @@ export default function EMDRProcessor() {
           onClose={() => setIsMenuOpen(false)}
           isSessionActive={isPlaying}
           settings={{
-            visualIntensity: Math.round(visualIntensity * 100), // Convert decimal to percentage
+            visualIntensity: decimalToPercentage(visualIntensity),
             targetShape,
             audioMode,
             isDarkMode,

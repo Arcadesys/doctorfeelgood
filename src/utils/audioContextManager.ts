@@ -8,6 +8,7 @@ class AudioContextManager {
   private audioContext: AudioContext | null = null;
   private isInitialized = false;
   private initializationPromise: Promise<void> | null = null;
+  private initializationError: Error | null = null;
 
   private constructor() {}
 
@@ -22,6 +23,17 @@ class AudioContextManager {
    * Initialize the audio context with proper error handling
    */
   public async initialize(): Promise<void> {
+    // If we've already failed initialization, throw the error
+    if (this.initializationError) {
+      throw this.initializationError;
+    }
+
+    // If we're already initialized, return
+    if (this.isInitialized && this.audioContext) {
+      return;
+    }
+
+    // If initialization is in progress, return the promise
     if (this.initializationPromise) {
       return this.initializationPromise;
     }
@@ -31,7 +43,9 @@ class AudioContextManager {
         // Check if AudioContext is supported
         const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
         if (!AudioContext) {
-          throw new Error('Web Audio API is not supported in this browser');
+          const error = new Error('Web Audio API is not supported in this browser');
+          this.initializationError = error;
+          throw error;
         }
 
         // Create audio context
@@ -43,10 +57,14 @@ class AudioContextManager {
         }
 
         this.isInitialized = true;
+        this.initializationError = null;
         resolve();
       } catch (error) {
         console.error('Failed to initialize audio context:', error);
-        reject(error);
+        this.initializationError = error instanceof Error ? error : new Error('Unknown error initializing audio context');
+        this.isInitialized = false;
+        this.audioContext = null;
+        reject(this.initializationError);
       }
     });
 
@@ -82,7 +100,7 @@ class AudioContextManager {
    * Check if the audio context is initialized
    */
   public isContextInitialized(): boolean {
-    return this.isInitialized;
+    return this.isInitialized && this.audioContext !== null;
   }
 
   /**
@@ -95,6 +113,7 @@ class AudioContextManager {
         this.audioContext = null;
         this.isInitialized = false;
         this.initializationPromise = null;
+        this.initializationError = null;
       } catch (error) {
         console.error('Failed to cleanup audio context:', error);
         throw error;

@@ -12,6 +12,7 @@ import EMDRTarget from './EMDRTarget';
 import { getAudioContext, getMediaElementSource, resumeAudioContext } from '../utils/audioUtils';
 import { decimalToPercentage, percentageToDecimal, clampDecimalIntensity } from '@/utils/intensityUtils';
 import { formatTime } from '@/utils/timeUtils';
+import { audioContextManager } from '@/utils/audioContextManager';
 
 // Simple version without the File System Access API
 type AudioFile = {
@@ -173,16 +174,45 @@ export default function EMDRProcessor() {
   // Initialize Audio Engine
   useEffect(() => {
     let mounted = true;
+    let initializationAttempted = false;
+    let initializationInProgress = false;
 
     const init = async () => {
+      if (initializationAttempted || initializationInProgress) return;
+      initializationInProgress = true;
+
       if (!audioPlayerRef.current) {
         console.error('Audio player element not found');
         setAudioError('Audio player element not found');
+        initializationInProgress = false;
         return;
       }
 
       try {
-        // Create new audio engine
+        // First, ensure the audio context is initialized
+        await audioContextManager.initialize();
+        
+        // Wait for the audio element to be ready
+        if (audioPlayerRef.current.readyState === 0) {
+          await new Promise((resolve, reject) => {
+            const handleCanPlay = () => {
+              audioPlayerRef.current?.removeEventListener('canplay', handleCanPlay);
+              audioPlayerRef.current?.removeEventListener('error', handleError);
+              resolve(undefined);
+            };
+            
+            const handleError = (e: Event) => {
+              audioPlayerRef.current?.removeEventListener('canplay', handleCanPlay);
+              audioPlayerRef.current?.removeEventListener('error', handleError);
+              reject(new Error('Failed to load audio source'));
+            };
+
+            audioPlayerRef.current?.addEventListener('canplay', handleCanPlay);
+            audioPlayerRef.current?.addEventListener('error', handleError);
+          });
+        }
+        
+        // Then create and initialize the audio engine
         const audioEngine = new AudioEngine();
         console.log('Created new AudioEngine instance');
 
@@ -208,12 +238,18 @@ export default function EMDRProcessor() {
 
         // Clear any previous errors
         setAudioError(null);
+        initializationAttempted = true;
       } catch (error) {
         console.error('Error initializing AudioEngine:', error);
         setAudioError(error instanceof Error ? error.message : 'Failed to initialize audio');
+        // Reset initialization flag to allow retry
+        initializationAttempted = false;
+      } finally {
+        initializationInProgress = false;
       }
     };
 
+    // Initialize on mount
     init();
     
     // Clean up on unmount
@@ -693,12 +729,36 @@ export default function EMDRProcessor() {
         if (!audioEngineRef.current) {
           console.error('AudioEngine not initialized');
           setAudioError('Audio engine not initialized');
-          return;
+          
+          // Try to initialize the audio engine if it's not already initialized
+          if (audioPlayerRef.current) {
+            try {
+              // First ensure audio context is initialized
+              await audioContextManager.initialize();
+              
+              const audioEngine = new AudioEngine();
+              await audioEngine.initialize(audioPlayerRef.current);
+              audioEngineRef.current = audioEngine;
+              console.log('AudioEngine initialized on demand');
+              
+              // Set initial configurations
+              audioEngine.updateContactSoundConfig(contactSoundConfig);
+              audioEngine.setAudioMode(audioMode);
+            } catch (initError) {
+              console.error('Failed to initialize AudioEngine on demand:', initError);
+              setAudioError('Failed to initialize audio engine');
+              return;
+            }
+          } else {
+            return;
+          }
         }
 
-        // Resume audio context
-        await audioEngineRef.current.resumeContext();
-        console.log('Audio context resumed');
+        // Ensure audio context is running
+        if (audioEngineRef.current.getContext()?.state === 'suspended') {
+          await audioEngineRef.current.resumeContext();
+          console.log('Audio context resumed');
+        }
 
         // Start playback
         const success = await audioEngineRef.current.startPlayback();
@@ -733,7 +793,6 @@ export default function EMDRProcessor() {
       console.error('Error in audio playback:', error);
       setAudioError(error instanceof Error ? error.message : 'Error in audio playback');
       setIsPlaying(false);
-      setTimeRemaining(null);
     }
   };
 
@@ -896,8 +955,23 @@ export default function EMDRProcessor() {
         <audio ref={menuOpenSoundRef} src="/sounds/menu-open.mp3" preload="auto" />
         <audio ref={menuCloseSoundRef} src="/sounds/menu-close.mp3" preload="auto" />
         <audio ref={playStatusSoundRef} src="/sounds/status-change.mp3" preload="auto" />
-        <audio ref={audioPlayerRef} loop={true}>
+        <audio 
+          ref={audioPlayerRef} 
+          preload="auto"
+          onError={(e) => {
+            const error = e.currentTarget.error;
+            console.error('Audio element error:', {
+              code: error?.code,
+              message: error?.message,
+              currentSrc: e.currentTarget.currentSrc,
+              readyState: e.currentTarget.readyState,
+              networkState: e.currentTarget.networkState
+            });
+            setAudioError(`Audio loading error: ${error?.message || 'Unknown error'}`);
+          }}
+        >
           <source src="/audio/sine-440hz.mp3" type="audio/mpeg" />
+          <source src="/audio/sine-440hz.ogg" type="audio/ogg" />
           Your browser does not support the audio element.
         </audio>
 

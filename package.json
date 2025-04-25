@@ -10,8 +10,8 @@
     "audio:generate": "node scripts/generate-all-audio.js",
     "audio:clicks": "ts-node -P scripts/tsconfig.json scripts/generateClickSounds.ts",
     "prebuild": "npm run audio:generate && npm run audio:clicks",
-    "test": "jest --verbose",
-    "test:watch": "jest --watch --verbose",
+    "test": "jest",
+    "test:watch": "jest --watch",
     "setup-tests": "npm install --legacy-peer-deps"
   },
   "dependencies": {
@@ -48,5 +48,15 @@
     "tailwindcss": "^4",
     "ts-node": "^10.9.2",
     "typescript": "^5"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "jsdom",
+    "moduleNameMapper": {
+      "^@/(.*)$": "<rootDir>/src/$1"
+    },
+    "setupFilesAfterEnv": [
+      "<rootDir>/src/setupTests.ts"
+    ]
   }
 }

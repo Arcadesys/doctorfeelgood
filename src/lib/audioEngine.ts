@@ -18,6 +18,10 @@ export interface AudioTrackConfig {
   filePath: string;
 }
 
+interface InitializedAudioEngine {
+  isInitialized: true;
+}
+
 // Main Audio Engine Class
 export class AudioEngine {
   private audioContext: AudioContext | null = null;
@@ -51,6 +55,8 @@ export class AudioEngine {
     filePath: '/audio/sine-440hz.mp3'
   };
 
+  private isInitialized: boolean = false;
+
   async initialize(audioElement?: HTMLAudioElement): Promise<void> {
     try {
       // Initialize audio context through manager
@@ -80,8 +86,15 @@ export class AudioEngine {
       await audioContextManager.resumeContext();
       
       console.log('AudioEngine initialized successfully');
+      this.isInitialized = true;
     } catch (error) {
       console.error('Error initializing AudioEngine:', error);
+      // Clean up any partially initialized state
+      this.audioContext = null;
+      this.gainNode = null;
+      this.mediaElementSource = null;
+      this.leftClickBuffer = null;
+      this.rightClickBuffer = null;
       throw error;
     }
   }
@@ -147,18 +160,22 @@ export class AudioEngine {
   }
   
   // Clean up and release resources
-  public dispose(): void {
-    this.stopAll();
-    
+  public async dispose(): Promise<void> {
     if (this.audioContext) {
-      audioContextManager.cleanup();
-      this.audioContext = null;
+      try {
+        this.stopAll();
+        await audioContextManager.cleanup();
+        this.audioContext = null;
+        this.gainNode = null;
+        this.mediaElementSource = null;
+        this.leftClickBuffer = null;
+        this.rightClickBuffer = null;
+        this.isPlaying = false;
+      } catch (error) {
+        console.error('Error during dispose:', error);
+        throw error;
+      }
     }
-    
-    this.gainNode = null;
-    this.mediaElementSource = null;
-    this.leftClickBuffer = null;
-    this.rightClickBuffer = null;
   }
   
   // Set audio mode
@@ -175,11 +192,11 @@ export class AudioEngine {
   }
   
   // Play a contact sound with panning
-  public playContactSound(isRightSide: boolean): void {
-    if (!this.audioContext || !this.contactSoundConfig.enabled || this.currentMode !== 'click') {
+  public async playContactSound(isRightSide: boolean): Promise<void> {
+    this.ensureInitialized();
+
+    if (!this.contactSoundConfig.enabled || this.currentMode !== 'click') {
       console.log('Cannot play contact sound:', {
-        hasContext: !!this.audioContext,
-        contextState: this.audioContext?.state,
         enabled: this.contactSoundConfig.enabled,
         mode: this.currentMode
       });
@@ -193,22 +210,26 @@ export class AudioEngine {
         return;
       }
       
-      const source = this.audioContext.createBufferSource();
+      // After ensureInitialized(), we know audioContext is not null
+      const source = this.audioContext!.createBufferSource();
       source.buffer = buffer;
       
       // Create a gain node for this sound
-      const soundGain = this.audioContext.createGain();
+      const soundGain = this.audioContext!.createGain();
       soundGain.gain.value = this.contactSoundConfig.volume;
       
       // Connect through main gain and panner nodes
       source.connect(soundGain);
-      soundGain.connect(this.gainNode!);
+      if (!this.gainNode) {
+        throw new Error('Gain node not initialized');
+      }
+      soundGain.connect(this.gainNode);
       
       console.log('Playing contact sound:', {
         side: isRightSide ? 'right' : 'left',
         volume: this.contactSoundConfig.volume,
         bufferDuration: buffer.duration,
-        contextState: this.audioContext.state
+        contextState: this.audioContext!.state
       });
       
       // Start playback
@@ -222,15 +243,13 @@ export class AudioEngine {
       
     } catch (error) {
       console.error('Error playing contact sound:', error);
+      throw error;
     }
   }
   
   // Start playing based on current mode
   public async startPlayback(): Promise<boolean> {
-    if (!this.audioContext) {
-      console.error('No audio context available');
-      return false;
-    }
+    this.ensureInitialized();
 
     try {
       // Make sure context is running
@@ -252,7 +271,8 @@ export class AudioEngine {
       return false;
     } catch (error) {
       console.error('Error starting playback:', error);
-      return false;
+      this.isPlaying = false;
+      throw error;
     }
   }
   
@@ -354,10 +374,24 @@ export class AudioEngine {
     return this.isPlaying;
   }
 
-  public setPan(value: number): void {
-    if (this.gainNode) {
-      this.gainNode.gain.setValueAtTime(value, this.audioContext?.currentTime ?? 0);
+  private checkInitialized(): boolean {
+    return this.audioContext !== null && 
+           this.gainNode !== null && 
+           audioContextManager.isContextInitialized();
+  }
+
+  private assertInitialized(): asserts this is AudioEngine {
+    if (!this.checkInitialized()) {
+      throw new Error('AudioEngine must be initialized before use');
     }
+  }
+
+  public async setPan(value: number): Promise<void> {
+    this.assertInitialized();
+    // After the assertion, TypeScript knows these are non-null
+    const panNode = this.audioContext!.createStereoPanner();
+    panNode.connect(this.gainNode!);
+    panNode.pan.value = value;
   }
 
   // Update frequencies for the audio engine
@@ -381,5 +415,10 @@ export class AudioEngine {
     if (this.audioContext?.state === 'suspended') {
       await this.audioContext.resume();
     }
+  }
+
+  // Get the audio context
+  public getContext(): AudioContext | null {
+    return this.audioContext;
   }
 } 

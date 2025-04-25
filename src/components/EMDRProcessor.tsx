@@ -88,9 +88,9 @@ export default function EMDRProcessor() {
   const speed = Math.round(60000 / bpm); // 60000ms = 1 minute
   
   // Audio track config with simplified options
-  const [audioTrackConfig] = useState<EMDRTrackConfig>({
+  const [audioTrackConfig, setAudioTrackConfig] = useState<EMDRTrackConfig>({
     bpm: 60,
-    sessionDuration: 300, // 5 minutes default
+    sessionDuration: 60, // 1 minute default
     oscillatorType: 'sine',
     volume: 0.7
   });
@@ -626,6 +626,13 @@ export default function EMDRProcessor() {
       timerRef.current = setTimeout(() => {
         setTimeRemaining(prev => {
           if (prev && prev > 0) {
+            // Play warning sound when 30 seconds remaining
+            if (prev === 31) {
+              if (playStatusSoundRef.current) {
+                playStatusSoundRef.current.play();
+                setA11yMessage('30 seconds remaining in session');
+              }
+            }
             return prev - 1;
           }
           return null;
@@ -793,6 +800,13 @@ export default function EMDRProcessor() {
       case 'targetColor':
         setTargetColor(value as string);
         break;
+      case 'sessionDuration':
+        // Update the session duration in the audio track config
+        setAudioTrackConfig(prev => ({
+          ...prev,
+          sessionDuration: value as number
+        }));
+        break;
       default:
         console.log(`Setting ${setting} changed to ${value}`);
     }
@@ -928,6 +942,7 @@ export default function EMDRProcessor() {
             movementGuideEnabled,
             targetHasGlow,
             targetColor,
+            sessionDuration: audioTrackConfig.sessionDuration,
           }}
           onSettingChange={handleSettingChange}
           audioMode={audioMode}
@@ -1001,8 +1016,24 @@ export default function EMDRProcessor() {
         {timeRemaining !== null && (
           <div className={`fixed top-6 left-1/2 transform -translate-x-1/2 ${
             isDarkMode ? 'bg-gray-800 text-white' : 'bg-gray-200 text-gray-900'
-          } px-6 py-3 rounded-full text-2xl font-bold z-20`}>
-            {formatTime(timeRemaining)}
+          } px-6 py-3 rounded-full text-2xl font-bold z-20 flex flex-col items-center ${
+            timeRemaining <= 30 ? 'animate-pulse' : ''
+          }`}>
+            <div className="text-3xl">{formatTime(timeRemaining)}</div>
+            <div className="text-xs mt-1">Session Time Remaining</div>
+            <div className="w-full h-1 bg-gray-600 rounded-full mt-2 overflow-hidden">
+              <div 
+                className={`h-full ${timeRemaining <= 30 ? 'bg-red-500' : isDarkMode ? 'bg-blue-500' : 'bg-blue-600'}`} 
+                style={{ 
+                  width: `${(timeRemaining / audioTrackConfig.sessionDuration) * 100}%`,
+                  transition: 'width 1s linear'
+                }}
+                aria-valuenow={timeRemaining}
+                aria-valuemin={0}
+                aria-valuemax={audioTrackConfig.sessionDuration}
+                role="progressbar"
+              ></div>
+            </div>
           </div>
         )}
 

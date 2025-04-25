@@ -70,7 +70,8 @@ export const EMDRTarget: React.FC<EMDRTargetProps> = ({
 
       // Calculate new position
       const width = canvas.width;
-      const x = width * 0.25 + (width * 0.5 * Math.cos(2 * Math.PI * progress));
+      // Center the movement around the middle of the screen
+      const x = width * 0.5 + (width * 0.3 * Math.cos(2 * Math.PI * progress));
       setPosition(prev => ({ ...prev, x }));
 
       // Request next frame if still active
@@ -100,15 +101,28 @@ export const EMDRTarget: React.FC<EMDRTargetProps> = ({
     const drawShape = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       
-      // Apply visual intensity to color opacity
-      const [r, g, b] = color.match(/\d+/g)?.map(Number) || [255, 255, 255];
+      // Parse color properly whether it's hex or rgb
+      let r, g, b;
+      if (color.startsWith('#')) {
+        // Handle hex color
+        const hex = color.replace('#', '');
+        r = parseInt(hex.substring(0, 2), 16);
+        g = parseInt(hex.substring(2, 4), 16);
+        b = parseInt(hex.substring(4, 6), 16);
+      } else {
+        // Handle rgb/rgba color
+        [r, g, b] = color.match(/\d+/g)?.map(Number) || [255, 255, 255];
+      }
+      
       const opacity = visualIntensity / 100;
       ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${opacity})`;
       ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${opacity})`;
 
       if (hasGlow) {
         ctx.shadowColor = color;
-        ctx.shadowBlur = 20; // Fixed glow intensity
+        ctx.shadowBlur = 20;
+      } else {
+        ctx.shadowBlur = 0;
       }
 
       ctx.beginPath();
@@ -147,6 +161,8 @@ export const EMDRTarget: React.FC<EMDRTargetProps> = ({
           ctx.closePath();
           break;
       }
+      
+      // Fill and stroke with same color
       ctx.fill();
       ctx.stroke();
     };

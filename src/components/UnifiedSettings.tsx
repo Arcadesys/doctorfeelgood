@@ -1,6 +1,13 @@
 import React from 'react';
 import { Drawer, DrawerOverlay, DrawerContent, DrawerCloseButton, DrawerHeader, DrawerBody, VStack, Box, Heading, FormControl, FormLabel, Select, Slider, SliderTrack, SliderThumb, SliderFilledTrack, useColorMode, Switch } from '@chakra-ui/react';
 
+// Format time in seconds to MM:SS format
+const formatTime = (seconds: number): string => {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+};
+
 interface UnifiedSettingsProps {
   isOpen: boolean;
   onClose: () => void;
@@ -16,6 +23,7 @@ interface UnifiedSettingsProps {
     movementGuideEnabled: boolean;
     targetHasGlow: boolean;
     targetColor: string;
+    sessionDuration?: number;
   };
   onSettingChange: (setting: string, value: unknown) => void;
   onAudioUpload?: (file: File) => void;
@@ -238,7 +246,7 @@ const UnifiedSettings: React.FC<UnifiedSettingsProps> = ({
                   <input
                     type="range"
                     min="30"
-                    max="120"
+                    max="60"
                     step="5"
                     value={settings.bpm}
                     onChange={(e) => onSettingChange('bpm', parseInt(e.target.value))}
@@ -249,9 +257,9 @@ const UnifiedSettings: React.FC<UnifiedSettingsProps> = ({
                 </div>
                 <div className="grid grid-cols-3 gap-2">
                   <button
-                    onClick={() => onSettingChange('bpm', 60)}
+                    onClick={() => onSettingChange('bpm', 30)}
                     className={`px-4 py-2 rounded ${
-                      settings.bpm === 60
+                      settings.bpm === 30
                         ? 'bg-blue-500 text-white'
                         : 'bg-gray-200 dark:bg-gray-700'
                     }`}
@@ -259,9 +267,9 @@ const UnifiedSettings: React.FC<UnifiedSettingsProps> = ({
                     Slow
                   </button>
                   <button
-                    onClick={() => onSettingChange('bpm', 90)}
+                    onClick={() => onSettingChange('bpm', 45)}
                     className={`px-4 py-2 rounded ${
-                      settings.bpm === 90
+                      settings.bpm === 45
                         ? 'bg-blue-500 text-white'
                         : 'bg-gray-200 dark:bg-gray-700'
                     }`}
@@ -269,14 +277,72 @@ const UnifiedSettings: React.FC<UnifiedSettingsProps> = ({
                     Medium
                   </button>
                   <button
-                    onClick={() => onSettingChange('bpm', 120)}
+                    onClick={() => onSettingChange('bpm', 60)}
                     className={`px-4 py-2 rounded ${
-                      settings.bpm === 120
+                      settings.bpm === 60
                         ? 'bg-blue-500 text-white'
                         : 'bg-gray-200 dark:bg-gray-700'
                     }`}
                   >
                     Fast
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            {/* Session Length Settings */}
+            <section>
+              <h3 className="text-lg font-semibold mb-3">Session Length</h3>
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range"
+                    min="30"
+                    max="120"
+                    step="30"
+                    value={settings.sessionDuration || 60}
+                    onChange={(e) => onSettingChange('sessionDuration', parseInt(e.target.value))}
+                    className="w-full"
+                    aria-label="Adjust session duration"
+                    disabled={isSessionActive}
+                  />
+                  <span className="text-sm font-medium min-w-[4rem] text-right">
+                    {formatTime(settings.sessionDuration || 60)}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    onClick={() => onSettingChange('sessionDuration', 30)}
+                    className={`px-4 py-2 rounded ${
+                      (settings.sessionDuration || 60) === 30
+                        ? 'bg-blue-500 text-white'
+                        : 'bg-gray-200 dark:bg-gray-700'
+                    }`}
+                    disabled={isSessionActive}
+                  >
+                    30 sec
+                  </button>
+                  <button
+                    onClick={() => onSettingChange('sessionDuration', 60)}
+                    className={`px-4 py-2 rounded ${
+                      (settings.sessionDuration || 60) === 60
+                        ? 'bg-blue-500 text-white'
+                        : 'bg-gray-200 dark:bg-gray-700'
+                    }`}
+                    disabled={isSessionActive}
+                  >
+                    1 min
+                  </button>
+                  <button
+                    onClick={() => onSettingChange('sessionDuration', 120)}
+                    className={`px-4 py-2 rounded ${
+                      (settings.sessionDuration || 60) === 120
+                        ? 'bg-blue-500 text-white'
+                        : 'bg-gray-200 dark:bg-gray-700'
+                    }`}
+                    disabled={isSessionActive}
+                  >
+                    2 min
                   </button>
                 </div>
               </div>

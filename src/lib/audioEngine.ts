@@ -73,9 +73,15 @@ export class AudioEngine {
 
       if (audioElement) {
         this.audioElement = audioElement;
+        
+        // Ensure the audio element is in a clean state
+        audioElement.pause();
+        audioElement.currentTime = 0;
+        
         // Get or create the MediaElementSource
         this.mediaElementSource = getMediaElementSource(audioElement);
         this.mediaElementSource.connect(this.gainNode);
+        this.audioElementConnected = true;
         console.log('Audio element connected successfully');
       }
 
@@ -95,6 +101,7 @@ export class AudioEngine {
       this.mediaElementSource = null;
       this.leftClickBuffer = null;
       this.rightClickBuffer = null;
+      this.audioElementConnected = false;
       throw error;
     }
   }
@@ -249,30 +256,54 @@ export class AudioEngine {
   
   // Start playing based on current mode
   public async startPlayback(): Promise<boolean> {
-    this.ensureInitialized();
-
     try {
-      // Make sure context is running
-      if (this.audioContext!.state === 'suspended') {
-        await this.audioContext!.resume();
+      this.ensureInitialized();
+      
+      if (!this.audioElement) {
+        console.error('No audio element available');
+        return false;
       }
 
-      if (this.currentMode === 'click') {
-        console.log('Starting click mode playback');
-        this.isPlaying = true;
-        return true;
-      } else if (this.currentMode === 'track') {
-        console.log('Starting track mode playback');
+      // Check if the audio element is ready
+      if (this.audioElement.readyState < 2) {
+        console.warn('Audio element not ready, waiting for data...');
+        await new Promise<void>((resolve, reject) => {
+          const handleCanPlay = () => {
+            this.audioElement?.removeEventListener('canplay', handleCanPlay);
+            this.audioElement?.removeEventListener('error', handleError);
+            resolve();
+          };
+          
+          const handleError = (e: Event) => {
+            const error = this.audioElement?.error;
+            console.error('Audio loading error:', error);
+            this.audioElement?.removeEventListener('canplay', handleCanPlay);
+            this.audioElement?.removeEventListener('error', handleError);
+            reject(new Error(`Failed to load audio: ${error?.message || 'Unknown error'}`));
+          };
+
+          this.audioElement?.addEventListener('canplay', handleCanPlay);
+          this.audioElement?.addEventListener('error', handleError);
+        });
+      }
+
+      // Ensure audio context is running
+      if (this.audioContext?.state === 'suspended') {
+        await this.resumeContext();
+      }
+
+      // Start playback based on mode
+      if (this.currentMode === 'track') {
         await this.startAudioTrack();
-        return true;
+      } else {
+        // For click mode, we don't need to start anything
+        this.isPlaying = true;
       }
 
-      console.warn('Unknown audio mode:', this.currentMode);
-      return false;
+      return true;
     } catch (error) {
       console.error('Error starting playback:', error);
-      this.isPlaying = false;
-      throw error;
+      return false;
     }
   }
   
@@ -287,41 +318,29 @@ export class AudioEngine {
   
   // Start playing audio track
   private async startAudioTrack(): Promise<void> {
-    if (!this.audioContext || this.isPlaying || this.currentMode !== 'track' || !this.audioElement) {
-      console.log('Cannot start audio track:', {
-        hasContext: !!this.audioContext,
-        isPlaying: this.isPlaying,
-        mode: this.currentMode,
-        hasAudioElement: !!this.audioElement
-      });
-      return;
+    if (!this.audioElement || !this.audioElementConnected) {
+      throw new Error('Audio element not properly connected');
     }
-    
+
     try {
-      if (!this.audioElementConnected && this.mediaElementSource === null) {
-        console.error('Audio element not properly connected');
-        return;
-      }
+      // Reset the audio element
+      this.audioElement.pause();
+      this.audioElement.currentTime = 0;
       
-      this.audioElement.loop = this.audioTrackConfig.loop;
+      // Start playback
+      await this.audioElement.play();
+      this.isPlaying = true;
       
-      // Set volume through gain node
-      if (this.gainNode) {
-        this.gainNode.gain.value = this.audioTrackConfig.volume;
-        console.log('Set audio track volume:', this.audioTrackConfig.volume);
-      }
-      
-      // Play the audio
-      try {
-        await this.audioElement.play();
-        console.log('Audio track playback started');
-        this.isPlaying = true;
-      } catch (playError) {
-        console.error('Error playing audio track:', playError);
-        throw playError;
-      }
+      // Set up ended handler
+      this.audioElement.onended = () => {
+        this.isPlaying = false;
+        if (this.audioTrackConfig.loop) {
+          this.audioElement?.play();
+        }
+      };
     } catch (error) {
-      console.error('Error in startAudioTrack:', error);
+      console.error('Error starting audio track:', error);
+      this.isPlaying = false;
       throw error;
     }
   }

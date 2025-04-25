@@ -763,7 +763,8 @@ export default function EMDRProcessor() {
   const handleSettingChange = async (setting: string, value: unknown) => {
     switch (setting) {
       case 'visualIntensity':
-        setVisualIntensity(value as number);
+        // Convert back from percentage to decimal for internal state
+        setVisualIntensity((value as number) / 100);
         break;
       case 'targetShape':
         setTargetShape(value as 'circle' | 'square' | 'triangle' | 'diamond' | 'star');
@@ -879,17 +880,7 @@ export default function EMDRProcessor() {
       {/* Background layer */}
       <div className={`fixed inset-0 ${isDarkMode ? 'bg-gray-900' : 'bg-white'}`} />
       
-      {/* Canvas layer */}
-      <canvas 
-        ref={canvasRef}
-        className="fixed inset-0 z-10"
-        aria-label="EMDR visual target canvas"
-        role="img"
-        aria-live="polite"
-        style={{ pointerEvents: 'none' }}
-      />
-
-      {/* Content layer */}
+      {/* Content layer - increase z-index to be above canvas */}
       <div className="relative z-20">
         {/* Audio elements */}
         <audio ref={menuOpenSoundRef} src="/sounds/menu-open.mp3" preload="auto" />
@@ -903,7 +894,7 @@ export default function EMDRProcessor() {
         {/* Header */}
         <div className="flex justify-between items-center p-4">
           <button 
-            className={`${isDarkMode ? 'text-white' : 'text-gray-800'}`}
+            className={`${isDarkMode ? 'text-white' : 'text-gray-800'} z-30`}
             onClick={toggleMenu}
             aria-label="Toggle menu"
           >
@@ -927,7 +918,7 @@ export default function EMDRProcessor() {
           onClose={() => setIsMenuOpen(false)}
           isSessionActive={isPlaying}
           settings={{
-            visualIntensity: visualIntensity * 100,
+            visualIntensity: Math.round(visualIntensity * 100), // Convert decimal to percentage
             targetShape,
             audioMode,
             isDarkMode,
@@ -950,8 +941,8 @@ export default function EMDRProcessor() {
           audioMetadata={audioMetadata}
         />
 
-        {/* Controls - z-20 to be above canvas but below menu */}
-        <div className={`fixed bottom-6 left-1/2 transform -translate-x-1/2 ${isDarkMode ? 'bg-gray-800' : 'bg-gray-200'} bg-opacity-80 p-4 rounded-full shadow-lg`}>
+        {/* Controls - z-20 to be above canvas */}
+        <div className={`fixed bottom-6 left-1/2 transform -translate-x-1/2 ${isDarkMode ? 'bg-gray-800' : 'bg-gray-200'} bg-opacity-80 p-4 rounded-full shadow-lg z-20`}>
           {audioMode === 'click' ? (
             <button
               onClick={togglePlayPause}
@@ -1031,13 +1022,13 @@ export default function EMDRProcessor() {
             hasGlow={targetHasGlow}
             movementPattern="ping-pong"
             intensity={1}
-            visualIntensity={visualIntensity * 100}
+            visualIntensity={Math.round(visualIntensity * 100)} // Convert decimal to percentage
           />
         ) : (
           <VisualTarget
             isActive={false}
             settings={{
-              visualIntensity: visualIntensity * 100,
+              visualIntensity: Math.round(visualIntensity * 100), // Convert decimal to percentage
               targetShape,
               targetColor,
             }}

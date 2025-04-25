@@ -42,6 +42,8 @@ const VisualTarget: React.FC<VisualTargetProps> = ({ isActive, settings }) => {
         backgroundColor: isActive ? targetColor : targetColor.replace(')', ', 0.3)').replace('rgb', 'rgba'),
         opacity: isActive ? opacity : opacity * 0.5,
         boxShadow: isActive ? `0 0 20px ${targetColor}` : 'none',
+        pointerEvents: 'none',
+        zIndex: 10
       }}
       role="presentation"
       aria-hidden="true"

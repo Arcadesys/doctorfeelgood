@@ -28,7 +28,68 @@ export const EMDRTarget: React.FC<EMDRTargetProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [glowIntensity, setGlowIntensity] = useState(0);
+  const animationFrameRef = useRef<number>();
+  const startTimeRef = useRef<number>();
 
+  // Initialize canvas size
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const updateSize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      setPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+    };
+
+    updateSize();
+    window.addEventListener('resize', updateSize);
+
+    return () => window.removeEventListener('resize', updateSize);
+  }, []);
+
+  // Animation effect
+  useEffect(() => {
+    if (!isActive || !canvasRef.current) {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+      return;
+    }
+
+    const animate = (timestamp: number) => {
+      if (!startTimeRef.current) {
+        startTimeRef.current = timestamp;
+      }
+
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+
+      const elapsed = timestamp - startTimeRef.current;
+      const progress = (elapsed % speed) / speed;
+
+      // Calculate new position
+      const width = canvas.width;
+      const x = width * 0.25 + (width * 0.5 * Math.cos(2 * Math.PI * progress));
+      setPosition(prev => ({ ...prev, x }));
+
+      // Request next frame if still active
+      if (isActive) {
+        animationFrameRef.current = requestAnimationFrame(animate);
+      }
+    };
+
+    animationFrameRef.current = requestAnimationFrame(animate);
+
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+      startTimeRef.current = undefined;
+    };
+  }, [isActive, speed]);
+
+  // Drawing effect
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -47,7 +108,7 @@ export const EMDRTarget: React.FC<EMDRTargetProps> = ({
 
       if (hasGlow) {
         ctx.shadowColor = color;
-        ctx.shadowBlur = glowIntensity;
+        ctx.shadowBlur = 20; // Fixed glow intensity
       }
 
       ctx.beginPath();
@@ -91,14 +152,20 @@ export const EMDRTarget: React.FC<EMDRTargetProps> = ({
     };
 
     drawShape();
-  }, [size, color, shape, hasGlow, glowIntensity, position, visualIntensity]);
+  }, [size, color, shape, hasGlow, position, visualIntensity]);
 
   return (
     <canvas
       ref={canvasRef}
-      width={size * 2}
-      height={size * 2}
-      style={{ position: 'absolute', top: 0, left: 0 }}
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        width: '100%',
+        height: '100%',
+        pointerEvents: 'none', // Allow clicking through the canvas
+        zIndex: 10
+      }}
       role="img"
       aria-label={`EMDR target: ${shape} shape`}
     />

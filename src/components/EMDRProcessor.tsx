@@ -11,6 +11,7 @@ import VisualTarget from './VisualTarget';
 import EMDRTarget from './EMDRTarget';
 import { getAudioContext, getMediaElementSource, resumeAudioContext } from '../utils/audioUtils';
 import { decimalToPercentage, percentageToDecimal, clampDecimalIntensity } from '@/utils/intensityUtils';
+import { formatTime } from '@/utils/timeUtils';
 
 // Simple version without the File System Access API
 type AudioFile = {
@@ -173,7 +174,7 @@ export default function EMDRProcessor() {
   useEffect(() => {
     let mounted = true;
 
-    (async () => {
+    const init = async () => {
       if (!audioPlayerRef.current) {
         console.error('Audio player element not found');
         setAudioError('Audio player element not found');
@@ -199,7 +200,7 @@ export default function EMDRProcessor() {
         audioEngineRef.current = audioEngine;
 
         // Set initial audio source
-        if (audioMode === 'track' && selectedAudio?.path) {
+        if (audioMode === 'track' && selectedAudio?.path && audioPlayerRef.current) {
           audioPlayerRef.current.src = selectedAudio.path;
           await audioPlayerRef.current.load();
           console.log('Audio track loaded:', selectedAudio.path);
@@ -211,7 +212,9 @@ export default function EMDRProcessor() {
         console.error('Error initializing AudioEngine:', error);
         setAudioError(error instanceof Error ? error.message : 'Failed to initialize audio');
       }
-    })();
+    };
+
+    init();
     
     // Clean up on unmount
     return () => {
@@ -732,13 +735,6 @@ export default function EMDRProcessor() {
       setIsPlaying(false);
       setTimeRemaining(null);
     }
-  };
-
-  // Format time for display
-  const formatTime = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   // Handle file upload

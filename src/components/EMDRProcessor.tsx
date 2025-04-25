@@ -724,42 +724,35 @@ export default function EMDRProcessor() {
   // Update togglePlayPause to handle audio context resumption
   const togglePlayPause = async () => {
     try {
-      if (!isPlaying) {
-        // Make sure we have an audio engine
-        if (!audioEngineRef.current) {
-          console.error('AudioEngine not initialized');
-          setAudioError('Audio engine not initialized');
-          
-          // Try to initialize the audio engine if it's not already initialized
-          if (audioPlayerRef.current) {
-            try {
-              // First ensure audio context is initialized
-              await audioContextManager.initialize();
-              
-              const audioEngine = new AudioEngine();
-              await audioEngine.initialize(audioPlayerRef.current);
-              audioEngineRef.current = audioEngine;
-              console.log('AudioEngine initialized on demand');
-              
-              // Set initial configurations
-              audioEngine.updateContactSoundConfig(contactSoundConfig);
-              audioEngine.setAudioMode(audioMode);
-            } catch (initError) {
-              console.error('Failed to initialize AudioEngine on demand:', initError);
-              setAudioError('Failed to initialize audio engine');
-              return;
-            }
-          } else {
-            return;
-          }
+      // Check if AudioEngine is initialized
+      if (!audioEngineRef.current) {
+        if (!audioPlayerRef.current) {
+          console.error('Audio player element not found');
+          setAudioError('Audio player element not found');
+          return;
         }
+        
+        console.log('Initializing AudioEngine on demand');
+        const audioEngine = new AudioEngine();
+        await audioEngine.initialize(audioPlayerRef.current);
+        audioEngineRef.current = audioEngine;
+        
+        // Set initial configurations
+        audioEngine.updateContactSoundConfig(contactSoundConfig);
+        audioEngine.setAudioMode(audioMode);
+      }
 
-        // Ensure audio context is running
-        if (audioEngineRef.current.getContext()?.state === 'suspended') {
-          await audioEngineRef.current.resumeContext();
-          console.log('Audio context resumed');
-        }
+      // Ensure audio context is running
+      if (audioEngineRef.current.getContext()?.state === 'suspended') {
+        await audioEngineRef.current.resumeContext();
+        console.log('Audio context resumed');
+      }
 
+      if (isPlaying) {
+        audioEngineRef.current.stopAll();
+        setIsPlaying(false);
+        setA11yMessage('Playback stopped');
+      } else {
         // Start playback
         const success = await audioEngineRef.current.startPlayback();
         console.log('Playback start result:', success);
@@ -769,30 +762,14 @@ export default function EMDRProcessor() {
           setAudioError('Failed to start audio playback');
         } else {
           setAudioError(null);
+          setIsPlaying(true);
+          setA11yMessage('Playback started');
         }
-
-        // Update state
-        setIsPlaying(true);
-        setTimeRemaining(audioTrackConfig.sessionDuration);
-        setA11yMessage('Session started. Visual target moving.');
-        startAnimation();
-      } else {
-        // Stop playback
-        if (audioEngineRef.current) {
-          audioEngineRef.current.stopAll();
-          console.log('Playback stopped');
-        }
-
-        // Update state
-        setIsPlaying(false);
-        setTimeRemaining(null);
-        setA11yMessage('Session paused. Visual target stopped.');
-        stopAnimation();
       }
     } catch (error) {
-      console.error('Error in audio playback:', error);
-      setAudioError(error instanceof Error ? error.message : 'Error in audio playback');
-      setIsPlaying(false);
+      console.error('Error in togglePlayPause:', error);
+      setAudioError('Failed to control audio playback');
+      setA11yMessage('Error controlling playback');
     }
   };
 

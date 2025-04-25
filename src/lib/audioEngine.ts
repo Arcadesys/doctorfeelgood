@@ -253,8 +253,8 @@ export class AudioEngine {
 
     try {
       // Make sure context is running
-      if (this.audioContext.state === 'suspended') {
-        await this.audioContext.resume();
+      if (this.audioContext!.state === 'suspended') {
+        await this.audioContext!.resume();
       }
 
       if (this.currentMode === 'click') {
@@ -380,9 +380,15 @@ export class AudioEngine {
            audioContextManager.isContextInitialized();
   }
 
+  private ensureInitialized(): void {
+    if (!this.checkInitialized()) {
+      throw new Error('AudioEngine not initialized');
+    }
+  }
+
   private assertInitialized(): asserts this is AudioEngine {
     if (!this.checkInitialized()) {
-      throw new Error('AudioEngine must be initialized before use');
+      throw new Error('AudioEngine not initialized');
     }
   }
 

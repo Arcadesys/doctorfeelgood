@@ -33,6 +33,13 @@ class MockAudioContext {
       onended: null
     };
   }
+
+  createMediaElementSource(element: HTMLAudioElement) {
+    return {
+      connect: jest.fn(),
+      disconnect: jest.fn()
+    };
+  }
   
   resume() {
     this.state = 'running';
@@ -41,6 +48,16 @@ class MockAudioContext {
   
   close() {
     return Promise.resolve();
+  }
+
+  decodeAudioData(buffer: ArrayBuffer) {
+    return Promise.resolve({
+      duration: 1,
+      length: 44100,
+      numberOfChannels: 2,
+      sampleRate: 44100,
+      getChannelData: () => new Float32Array(44100)
+    });
   }
 }
 

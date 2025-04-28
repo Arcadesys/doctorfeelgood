@@ -1,11 +1,12 @@
 module.exports = {
   testEnvironment: 'jsdom',
-  setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
+  setupFilesAfterEnv: ['<rootDir>/src/setupTests.ts'],
   testPathIgnorePatterns: ['<rootDir>/.next/', '<rootDir>/node_modules/'],
   moduleNameMapper: {
     // Handle module aliases (important for Next.js)
     '^@/components/(.*)$': '<rootDir>/src/components/$1',
     '^@/utils/(.*)$': '<rootDir>/src/utils/$1',
+    '^@/lib/(.*)$': '<rootDir>/src/lib/$1',
     // Handle CSS imports (if you're using CSS modules)
     '^.+\\.(css|less|scss|sass)$': 'identity-obj-proxy'
   },

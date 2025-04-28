@@ -1,20 +1,11 @@
 // Audio Engine for EMDR Processor
 
 import { getAudioContext, getMediaElementSource, resumeAudioContext } from '../utils/audioUtils';
+import { audioContextManager } from '@/utils/audioContextManager';
+import { AudioMode, ContactSoundConfig, AudioTrackConfig } from '@/types/audio';
 
-export type AudioMode = 'click' | 'track';
-
-export interface ContactSoundConfig {
-  leftSamplePath: string;
-  rightSamplePath: string;
-  volume: number;
-  enabled: boolean;
-}
-
-export interface AudioTrackConfig {
-  volume: number;
-  loop: boolean;
-  filePath: string;
+interface InitializedAudioEngine {
+  isInitialized: true;
 }
 
 // Main Audio Engine Class
@@ -50,10 +41,17 @@ export class AudioEngine {
     filePath: '/audio/sine-440hz.mp3'
   };
 
+  private isInitialized: boolean = false;
+
   async initialize(audioElement?: HTMLAudioElement): Promise<void> {
     try {
-      // Get the singleton audio context
-      this.audioContext = getAudioContext();
+      // Initialize audio context through manager
+      await audioContextManager.initialize();
+      this.audioContext = audioContextManager.getContext();
+      
+      if (!this.audioContext) {
+        throw new Error('Failed to initialize audio context');
+      }
       
       // Create gain node
       this.gainNode = this.audioContext.createGain();
@@ -61,21 +59,35 @@ export class AudioEngine {
 
       if (audioElement) {
         this.audioElement = audioElement;
+        
+        // Ensure the audio element is in a clean state
+        audioElement.pause();
+        audioElement.currentTime = 0;
+        
         // Get or create the MediaElementSource
         this.mediaElementSource = getMediaElementSource(audioElement);
         this.mediaElementSource.connect(this.gainNode);
+        this.audioElementConnected = true;
         console.log('Audio element connected successfully');
       }
 
       // Load click samples
       await this.loadClickSamples();
       
-      // Resume audio context
-      await resumeAudioContext();
+      // Resume audio context if needed
+      await audioContextManager.resumeContext();
       
       console.log('AudioEngine initialized successfully');
+      this.isInitialized = true;
     } catch (error) {
       console.error('Error initializing AudioEngine:', error);
+      // Clean up any partially initialized state
+      this.audioContext = null;
+      this.gainNode = null;
+      this.mediaElementSource = null;
+      this.leftClickBuffer = null;
+      this.rightClickBuffer = null;
+      this.audioElementConnected = false;
       throw error;
     }
   }
@@ -141,18 +153,22 @@ export class AudioEngine {
   }
   
   // Clean up and release resources
-  public dispose(): void {
-    this.stopAll();
-    
+  public async dispose(): Promise<void> {
     if (this.audioContext) {
-      this.audioContext.close();
-      this.audioContext = null;
+      try {
+        this.stopAll();
+        await audioContextManager.cleanup();
+        this.audioContext = null;
+        this.gainNode = null;
+        this.mediaElementSource = null;
+        this.leftClickBuffer = null;
+        this.rightClickBuffer = null;
+        this.isPlaying = false;
+      } catch (error) {
+        console.error('Error during dispose:', error);
+        throw error;
+      }
     }
-    
-    this.gainNode = null;
-    this.mediaElementSource = null;
-    this.leftClickBuffer = null;
-    this.rightClickBuffer = null;
   }
   
   // Set audio mode
@@ -169,11 +185,11 @@ export class AudioEngine {
   }
   
   // Play a contact sound with panning
-  public playContactSound(isRightSide: boolean): void {
-    if (!this.audioContext || !this.contactSoundConfig.enabled || this.currentMode !== 'click') {
+  public async playContactSound(isRightSide: boolean): Promise<void> {
+    this.ensureInitialized();
+
+    if (!this.contactSoundConfig.enabled || this.currentMode !== 'click') {
       console.log('Cannot play contact sound:', {
-        hasContext: !!this.audioContext,
-        contextState: this.audioContext?.state,
         enabled: this.contactSoundConfig.enabled,
         mode: this.currentMode
       });
@@ -187,22 +203,26 @@ export class AudioEngine {
         return;
       }
       
-      const source = this.audioContext.createBufferSource();
+      // After ensureInitialized(), we know audioContext is not null
+      const source = this.audioContext!.createBufferSource();
       source.buffer = buffer;
       
       // Create a gain node for this sound
-      const soundGain = this.audioContext.createGain();
+      const soundGain = this.audioContext!.createGain();
       soundGain.gain.value = this.contactSoundConfig.volume;
       
       // Connect through main gain and panner nodes
       source.connect(soundGain);
-      soundGain.connect(this.gainNode!);
+      if (!this.gainNode) {
+        throw new Error('Gain node not initialized');
+      }
+      soundGain.connect(this.gainNode);
       
       console.log('Playing contact sound:', {
         side: isRightSide ? 'right' : 'left',
         volume: this.contactSoundConfig.volume,
         bufferDuration: buffer.duration,
-        contextState: this.audioContext.state
+        contextState: this.audioContext!.state
       });
       
       // Start playback
@@ -216,34 +236,57 @@ export class AudioEngine {
       
     } catch (error) {
       console.error('Error playing contact sound:', error);
+      throw error;
     }
   }
   
   // Start playing based on current mode
   public async startPlayback(): Promise<boolean> {
-    if (!this.audioContext) {
-      console.error('No audio context available');
-      return false;
-    }
-
     try {
-      // Make sure context is running
-      if (this.audioContext.state === 'suspended') {
-        await this.audioContext.resume();
+      this.ensureInitialized();
+      
+      if (!this.audioElement) {
+        console.error('No audio element available');
+        return false;
       }
 
-      if (this.currentMode === 'click') {
-        console.log('Starting click mode playback');
-        this.isPlaying = true;
-        return true;
-      } else if (this.currentMode === 'track') {
-        console.log('Starting track mode playback');
+      // Check if the audio element is ready
+      if (this.audioElement.readyState < 2) {
+        console.warn('Audio element not ready, waiting for data...');
+        await new Promise<void>((resolve, reject) => {
+          const handleCanPlay = () => {
+            this.audioElement?.removeEventListener('canplay', handleCanPlay);
+            this.audioElement?.removeEventListener('error', handleError);
+            resolve();
+          };
+          
+          const handleError = (e: Event) => {
+            const error = this.audioElement?.error;
+            console.error('Audio loading error:', error);
+            this.audioElement?.removeEventListener('canplay', handleCanPlay);
+            this.audioElement?.removeEventListener('error', handleError);
+            reject(new Error(`Failed to load audio: ${error?.message || 'Unknown error'}`));
+          };
+
+          this.audioElement?.addEventListener('canplay', handleCanPlay);
+          this.audioElement?.addEventListener('error', handleError);
+        });
+      }
+
+      // Ensure audio context is running
+      if (this.audioContext?.state === 'suspended') {
+        await this.resumeContext();
+      }
+
+      // Start playback based on mode
+      if (this.currentMode === 'track') {
         await this.startAudioTrack();
-        return true;
+      } else {
+        // For click mode, we don't need to start anything
+        this.isPlaying = true;
       }
 
-      console.warn('Unknown audio mode:', this.currentMode);
-      return false;
+      return true;
     } catch (error) {
       console.error('Error starting playback:', error);
       return false;
@@ -261,41 +304,35 @@ export class AudioEngine {
   
   // Start playing audio track
   private async startAudioTrack(): Promise<void> {
-    if (!this.audioContext || this.isPlaying || this.currentMode !== 'track' || !this.audioElement) {
-      console.log('Cannot start audio track:', {
-        hasContext: !!this.audioContext,
-        isPlaying: this.isPlaying,
-        mode: this.currentMode,
-        hasAudioElement: !!this.audioElement
-      });
-      return;
+    if (!this.audioElement || !this.audioElementConnected) {
+      throw new Error('Audio element not properly connected');
     }
-    
+
     try {
-      if (!this.audioElementConnected && this.mediaElementSource === null) {
-        console.error('Audio element not properly connected');
-        return;
+      // Reset the audio element
+      this.audioElement.pause();
+      this.audioElement.currentTime = 0;
+      
+      // Start playback
+      const playPromise = this.audioElement.play();
+      
+      // Handle the play promise properly
+      if (playPromise !== undefined) {
+        await playPromise;
       }
       
-      this.audioElement.loop = this.audioTrackConfig.loop;
+      this.isPlaying = true;
       
-      // Set volume through gain node
-      if (this.gainNode) {
-        this.gainNode.gain.value = this.audioTrackConfig.volume;
-        console.log('Set audio track volume:', this.audioTrackConfig.volume);
-      }
-      
-      // Play the audio
-      try {
-        await this.audioElement.play();
-        console.log('Audio track playback started');
-        this.isPlaying = true;
-      } catch (playError) {
-        console.error('Error playing audio track:', playError);
-        throw playError;
-      }
+      // Set up ended handler
+      this.audioElement.onended = () => {
+        this.isPlaying = false;
+        if (this.audioTrackConfig.loop) {
+          this.audioElement?.play();
+        }
+      };
     } catch (error) {
-      console.error('Error in startAudioTrack:', error);
+      console.error('Error starting audio track:', error);
+      this.isPlaying = false;
       throw error;
     }
   }
@@ -348,10 +385,30 @@ export class AudioEngine {
     return this.isPlaying;
   }
 
-  public setPan(value: number): void {
-    if (this.gainNode) {
-      this.gainNode.gain.setValueAtTime(value, this.audioContext?.currentTime ?? 0);
+  private checkInitialized(): boolean {
+    return this.audioContext !== null && 
+           this.gainNode !== null && 
+           audioContextManager.isContextInitialized();
+  }
+
+  private ensureInitialized(): void {
+    if (!this.checkInitialized()) {
+      throw new Error('AudioEngine not initialized');
     }
+  }
+
+  private assertInitialized(): asserts this is AudioEngine {
+    if (!this.checkInitialized()) {
+      throw new Error('AudioEngine not initialized');
+    }
+  }
+
+  public async setPan(value: number): Promise<void> {
+    this.assertInitialized();
+    // After the assertion, TypeScript knows these are non-null
+    const panNode = this.audioContext!.createStereoPanner();
+    panNode.connect(this.gainNode!);
+    panNode.pan.value = value;
   }
 
   // Update frequencies for the audio engine
@@ -372,8 +429,11 @@ export class AudioEngine {
 
   // Resume audio context if suspended
   public async resumeContext(): Promise<void> {
-    if (this.audioContext?.state === 'suspended') {
-      await this.audioContext.resume();
-    }
+    await audioContextManager.resumeContext();
+  }
+
+  // Get the audio context
+  public getContext(): AudioContext | null {
+    return audioContextManager.getContext();
   }
 } 

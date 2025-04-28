@@ -4,19 +4,20 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   AudioEngine, 
   AudioMode,
-  ContactSoundConfig
+  ContactSoundConfig,
+  AudioTrackConfig
 } from '../lib/audioEngine';
 import UnifiedSettings from './UnifiedSettings';
+import VisualTarget from './VisualTarget';
+import EMDRTarget from './EMDRTarget';
 import { getAudioContext, getMediaElementSource, resumeAudioContext } from '../utils/audioUtils';
-
-// Simple version without the File System Access API
-type AudioFile = {
-  id: string;
-  name: string;
-  lastUsed: string;
-  path?: string;
-  objectUrl?: string;
-};
+import { decimalToPercentage, percentageToDecimal, clampDecimalIntensity } from '@/utils/intensityUtils';
+import { formatTime } from '@/utils/timeUtils';
+import { audioContextManager } from '@/utils/audioContextManager';
+import { 
+  AudioFile, 
+  AudioMetadata
+} from '@/types/audio';
 
 // Audio context interfaces
 interface AudioContextState {
@@ -40,34 +41,58 @@ declare global {
   }
 }
 
+// Update the VisualTarget component props
+interface VisualTargetProps {
+  isActive: boolean;
+  visualIntensity: number;
+  targetShape: 'square' | 'triangle' | 'circle' | 'diamond' | 'star';
+  targetColor: string;
+  targetHasGlow: boolean;
+}
+
 export default function EMDRProcessor() {
   // State variables
-  const [audioMode, setAudioMode] = useState<'click' | 'track'>('click');
-  const [panValue, setPanValue] = useState(0);
-  const [a11yMessage, setA11yMessage] = useState('');
-  const [isDarkMode, setIsDarkMode] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
-  const [selectedAudio, setSelectedAudio] = useState<AudioFile | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [animationFrameId, setAnimationFrameId] = useState<number | null>(null);
-  const [audioError, setAudioError] = useState<string | null>(null);
-  
-  // Visual settings with simplified options
-  const [targetShape, setTargetShape] = useState<'circle' | 'square' | 'triangle' | 'diamond'>('circle');
-  const [visualIntensity, setVisualIntensity] = useState(0.6); // Medium intensity by default
-  const [targetHasGlow] = useState(true); // Always enabled for better visibility
-  const [targetSize] = useState(50); // Fixed size
-  const [targetColor] = useState('#ffffff'); // Fixed color
+  const [visualIntensity, setVisualIntensity] = useState(clampDecimalIntensity(0.5));
+  const [targetShape, setTargetShape] = useState<'circle' | 'square' | 'triangle' | 'diamond' | 'star'>('circle');
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [audioMode, setAudioMode] = useState<'click' | 'track'>('click');
   const [bpm, setBpm] = useState(60);
-  
+  const [selectedAudio, setSelectedAudio] = useState<AudioFile | null>(null);
+  const [audioMetadata, setAudioMetadata] = useState<AudioMetadata | null>(null);
+  const [audioFeedbackEnabled, setAudioFeedbackEnabled] = useState(true);
+  const [visualGuideEnabled, setVisualGuideEnabled] = useState(true);
+  const [movementGuideEnabled, setMovementGuideEnabled] = useState(true);
+  const [a11yMessage, setA11yMessage] = useState<string | null>(null);
+  const [audioError, setAudioError] = useState<string | null>(null);
+  const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
+  const [animationFrameId, setAnimationFrameId] = useState<number | null>(null);
+  const [panValue, setPanValue] = useState(0);
+  const [targetHasGlow, setTargetHasGlow] = useState(true); // Make this toggleable
+  const [targetSize] = useState(50); // Fixed size
+  const [targetColor, setTargetColor] = useState('#ffffff'); // Add targetColor state
+
+  // Refs
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const audioEngineRef = useRef<AudioEngine | null>(null);
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const animationRef = useRef<number | null>(null);
+  const canvasSizedRef = useRef<boolean>(false);
+  const animationIdRef = useRef<number | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuOpenSoundRef = useRef<HTMLAudioElement>(null);
+  const menuCloseSoundRef = useRef<HTMLAudioElement>(null);
+  const playStatusSoundRef = useRef<HTMLAudioElement>(null);
+
   // Convert BPM to milliseconds for animation speed
   const speed = Math.round(60000 / bpm); // 60000ms = 1 minute
   
   // Audio track config with simplified options
-  const [audioTrackConfig] = useState<EMDRTrackConfig>({
+  const [audioTrackConfig, setAudioTrackConfig] = useState<EMDRTrackConfig>({
     bpm: 60,
-    sessionDuration: 300, // 5 minutes default
+    sessionDuration: 60, // 1 minute default
     oscillatorType: 'sine',
     volume: 0.7
   });
@@ -82,11 +107,6 @@ export default function EMDRProcessor() {
     enabled: true
   });
   
-  // Animation state
-  const animationIdRef = useRef<number | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const canvasSizedRef = useRef<boolean>(false);
-  
   // Audio context state
   const audioContextRef = useRef<AudioContextState>({
     context: null,
@@ -94,24 +114,6 @@ export default function EMDRProcessor() {
     panner: null,
     gainNode: null
   });
-  
-  // Audio engine reference
-  const audioEngineRef = useRef<AudioEngine | null>(null);
-  
-  const menuRef = useRef<HTMLDivElement>(null);
-  const menuOpenSoundRef = useRef<HTMLAudioElement>(null);
-  const menuCloseSoundRef = useRef<HTMLAudioElement>(null);
-  const audioPlayerRef = useRef<HTMLAudioElement>(null);
-  const playStatusSoundRef = useRef<HTMLAudioElement>(null);
-  
-  // Refs
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-  
-  // Add audioMetadata state
-  const [audioMetadata, setAudioMetadata] = useState<{
-    duration: number;
-    sampleRate: number;
-  } | null>(null);
   
   // Draw visual target helper function
   const drawVisualTarget = useCallback(() => {
@@ -171,16 +173,22 @@ export default function EMDRProcessor() {
   // Initialize Audio Engine
   useEffect(() => {
     let mounted = true;
+    let initializationAttempted = false;
+    let initializationInProgress = false;
 
-    (async () => {
+    const init = async () => {
+      if (initializationAttempted || initializationInProgress) return;
+      initializationInProgress = true;
+
       if (!audioPlayerRef.current) {
         console.error('Audio player element not found');
         setAudioError('Audio player element not found');
+        initializationInProgress = false;
         return;
       }
 
       try {
-        // Create new audio engine
+        // Create and initialize the audio engine
         const audioEngine = new AudioEngine();
         console.log('Created new AudioEngine instance');
 
@@ -196,31 +204,65 @@ export default function EMDRProcessor() {
         
         // Store in ref
         audioEngineRef.current = audioEngine;
-
-        // Set initial audio source
-        if (audioMode === 'track' && selectedAudio?.path) {
+        
+        // Set initial audio source and ensure it's loaded
+        if (audioMode === 'track' && selectedAudio?.path && audioPlayerRef.current) {
+          // Reset the audio element
+          audioPlayerRef.current.pause();
+          audioPlayerRef.current.currentTime = 0;
+          
+          // Set new source
           audioPlayerRef.current.src = selectedAudio.path;
-          await audioPlayerRef.current.load();
-          console.log('Audio track loaded:', selectedAudio.path);
+          
+          // Wait for the audio to be loaded
+          await new Promise<void>((resolve, reject) => {
+            const handleCanPlay = () => {
+              console.log('Audio can play');
+              audioPlayerRef.current?.removeEventListener('canplay', handleCanPlay);
+              audioPlayerRef.current?.removeEventListener('error', handleError);
+              resolve();
+            };
+            
+            const handleError = (e: Event) => {
+              const error = audioPlayerRef.current?.error;
+              console.error('Audio loading error:', {
+                code: error?.code,
+                message: error?.message,
+                networkState: audioPlayerRef.current?.networkState,
+                readyState: audioPlayerRef.current?.readyState
+              });
+              audioPlayerRef.current?.removeEventListener('canplay', handleCanPlay);
+              audioPlayerRef.current?.removeEventListener('error', handleError);
+              reject(new Error(`Failed to load audio: ${error?.message || 'Unknown error'}`));
+            };
+
+            audioPlayerRef.current?.addEventListener('canplay', handleCanPlay);
+            audioPlayerRef.current?.addEventListener('error', handleError);
+            
+            // Start loading
+            audioPlayerRef.current?.load();
+          });
+          
+          console.log('Audio track loaded successfully:', selectedAudio.path);
         }
 
         // Clear any previous errors
         setAudioError(null);
       } catch (error) {
-        console.error('Error initializing AudioEngine:', error);
+        console.error('Error initializing audio:', error);
         setAudioError(error instanceof Error ? error.message : 'Failed to initialize audio');
-      }
-    })();
-    
-    // Clean up on unmount
-    return () => {
-      mounted = false;
-      if (audioEngineRef.current) {
-        audioEngineRef.current.dispose();
-        audioEngineRef.current = null;
+      } finally {
+        initializationInProgress = false;
+        initializationAttempted = true;
       }
     };
-  }, [audioMode, contactSoundConfig, selectedAudio]);
+
+    init();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
   
   // Sync configurations with audio engine when they change
   useEffect(() => {
@@ -626,6 +668,13 @@ export default function EMDRProcessor() {
       timerRef.current = setTimeout(() => {
         setTimeRemaining(prev => {
           if (prev && prev > 0) {
+            // Play warning sound when 30 seconds remaining
+            if (prev === 31) {
+              if (playStatusSoundRef.current) {
+                playStatusSoundRef.current.play();
+                setA11yMessage('30 seconds remaining in session');
+              }
+            }
             return prev - 1;
           }
           return null;
@@ -660,13 +709,6 @@ export default function EMDRProcessor() {
       if (audioEngineRef.current) {
         audioEngineRef.current.setAudioMode(mode);
         setAudioMode(mode);
-        
-        if (mode === 'track' && selectedAudio?.path) {
-          if (audioPlayerRef.current) {
-            audioPlayerRef.current.src = selectedAudio.path;
-            await audioPlayerRef.current.load();
-          }
-        }
       }
     } catch (error) {
       console.error('Error changing audio mode:', error);
@@ -674,205 +716,108 @@ export default function EMDRProcessor() {
     }
   };
 
-  // Update togglePlayPause to handle audio context resumption
-  const togglePlayPause = async () => {
-    try {
-      if (!isPlaying) {
-        // Make sure we have an audio engine
-        if (!audioEngineRef.current) {
-          console.error('AudioEngine not initialized');
-          setAudioError('Audio engine not initialized');
-          return;
-        }
+  // Effect to handle audio mode changes
+  useEffect(() => {
+    const loadAudio = async () => {
+      if (audioMode === 'track' && selectedAudio && audioPlayerRef.current) {
+        try {
+          // Reset the audio element
+          audioPlayerRef.current.pause();
+          audioPlayerRef.current.currentTime = 0;
+          
+          // Only use path property, not objectUrl which may be stale
+          const audioSource = selectedAudio.path;
+          if (!audioSource) {
+            console.error('No audio source available');
+            setAudioError('No audio source available');
+            return;
+          }
+          
+          // Set new source
+          audioPlayerRef.current.src = audioSource;
+          
+          // Wait for the audio to be loaded
+          await new Promise<void>((resolve, reject) => {
+            const handleCanPlay = () => {
+              console.log('Audio can play');
+              audioPlayerRef.current?.removeEventListener('canplay', handleCanPlay);
+              audioPlayerRef.current?.removeEventListener('error', handleError);
+              resolve();
+            };
+            
+            const handleError = (e: Event) => {
+              const error = audioPlayerRef.current?.error;
+              console.error('Audio loading error:', {
+                code: error?.code,
+                message: error?.message,
+                networkState: audioPlayerRef.current?.networkState,
+                readyState: audioPlayerRef.current?.readyState
+              });
+              audioPlayerRef.current?.removeEventListener('canplay', handleCanPlay);
+              audioPlayerRef.current?.removeEventListener('error', handleError);
+              reject(new Error(`Failed to load audio: ${error?.message || 'Unknown error'}`));
+            };
 
-        // Resume audio context
-        await audioEngineRef.current.resumeContext();
-        console.log('Audio context resumed');
-
-        // Start playback
-        const success = await audioEngineRef.current.startPlayback();
-        console.log('Playback start result:', success);
-
-        if (!success) {
-          console.warn('Failed to start audio playback, but continuing with visual target');
-          setAudioError('Failed to start audio playback');
-        } else {
+            audioPlayerRef.current?.addEventListener('canplay', handleCanPlay);
+            audioPlayerRef.current?.addEventListener('error', handleError);
+            
+            // Start loading
+            audioPlayerRef.current?.load();
+          });
+          
           setAudioError(null);
+        } catch (error) {
+          console.error('Error loading audio:', error);
+          setAudioError(error instanceof Error ? error.message : 'Failed to load audio');
         }
-
-        // Update state
-        setIsPlaying(true);
-        setTimeRemaining(audioTrackConfig.sessionDuration);
-        setA11yMessage('Session started. Visual target moving.');
-        startAnimation();
-      } else {
-        // Stop playback
-        if (audioEngineRef.current) {
-          audioEngineRef.current.stopAll();
-          console.log('Playback stopped');
-        }
-
-        // Update state
-        setIsPlaying(false);
-        setTimeRemaining(null);
-        setA11yMessage('Session paused. Visual target stopped.');
-        stopAnimation();
       }
-    } catch (error) {
-      console.error('Error in audio playback:', error);
-      setAudioError(error instanceof Error ? error.message : 'Error in audio playback');
-      setIsPlaying(false);
-      setTimeRemaining(null);
-    }
-  };
+    };
+    
+    loadAudio();
+  }, [audioMode, selectedAudio]);
 
-  // Format time for display
-  const formatTime = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  // Handle file upload
-  const handleAudioUpload = useCallback(async (file: File) => {
-    try {
-      const objectUrl = URL.createObjectURL(file);
-      const newAudio: AudioFile = {
-        id: Date.now().toString(),
-        name: file.name,
-        lastUsed: new Date().toLocaleString(),
-        objectUrl
-      };
-      
-      setSelectedAudio(newAudio);
-      setAudioFiles(prev => [...prev, newAudio]);
-      
-      if (audioPlayerRef.current) {
-        audioPlayerRef.current.src = objectUrl;
-        await audioPlayerRef.current.load();
-      }
-      
-      setA11yMessage(`Audio file ${file.name} loaded successfully`);
-    } catch (error) {
-      console.error('Error uploading audio file:', error);
-      setA11yMessage('Error uploading audio file');
-    }
-  }, []);
-
-  // Handle setting changes with simplified options
+  // Handle setting changes
   const handleSettingChange = async (setting: string, value: unknown) => {
     switch (setting) {
-      case 'audioMode':
-        setAudioMode(value as typeof audioMode);
-        break;
       case 'visualIntensity':
-        setVisualIntensity(value as number);
+        setVisualIntensity(clampDecimalIntensity(percentageToDecimal(value as number)));
         break;
       case 'targetShape':
-        setTargetShape(value as typeof targetShape);
+        setTargetShape(value as 'circle' | 'square' | 'triangle' | 'diamond' | 'star');
         break;
       case 'isDarkMode':
         setIsDarkMode(value as boolean);
-        localStorage.setItem('theme', value ? 'dark' : 'light');
-        if (value) {
-          document.documentElement.classList.add('dark');
-        } else {
-          document.documentElement.classList.remove('dark');
-        }
+        break;
+      case 'audioMode':
+        await handleAudioModeChange(value as 'click' | 'track');
         break;
       case 'bpm':
-        setBpm(value as number);
+        handleBpmChange(value as number);
         break;
-      case 'leftClickSound':
-      case 'rightClickSound': {
-        const file = value as File;
-        if (!file) return;
-
-        try {
-          // Create object URL for the file
-          const objectUrl = URL.createObjectURL(file);
-          
-          // Update the contact sound config
-          if (audioEngineRef.current) {
-            const config = {
-              ...contactSoundConfig,
-              [setting === 'leftClickSound' ? 'leftSamplePath' : 'rightSamplePath']: objectUrl
-            };
-            audioEngineRef.current.updateContactSoundConfig(config);
-            
-            // Save to localStorage
-            const savedSounds = JSON.parse(localStorage.getItem('customClickSounds') || '{}');
-            savedSounds[setting] = {
-              name: file.name,
-              type: file.type,
-              lastModified: file.lastModified,
-              objectUrl
-            };
-            localStorage.setItem('customClickSounds', JSON.stringify(savedSounds));
-            
-            setA11yMessage(`${setting === 'leftClickSound' ? 'Left' : 'Right'} click sound updated`);
-          }
-        } catch (error) {
-          console.error(`Error updating ${setting}:`, error);
-          setAudioError(`Failed to update ${setting}`);
-        }
+      case 'audioFeedbackEnabled':
+        setAudioFeedbackEnabled(value as boolean);
         break;
-      }
-      case 'audioTrack': {
-        const file = value as File;
-        if (!file) return;
-
-        try {
-          // Create object URL for the file
-          const objectUrl = URL.createObjectURL(file);
-          
-          // Create a new audio element to get metadata
-          const audio = new Audio();
-          audio.src = objectUrl;
-          
-          // Wait for metadata to load
-          await new Promise((resolve, reject) => {
-            audio.addEventListener('loadedmetadata', resolve);
-            audio.addEventListener('error', reject);
-          });
-          
-          // Create new audio file object
-          const newAudio: AudioFile = {
-            id: Date.now().toString(),
-            name: file.name,
-            lastUsed: new Date().toISOString(),
-            objectUrl
-          };
-          
-          // Update audio metadata
-          setAudioMetadata({
-            duration: audio.duration,
-            sampleRate: 44100 // Default sample rate, as we can't get this from the Audio API
-          });
-          
-          // Update selected audio
-          setSelectedAudio(newAudio);
-          
-          // Save to localStorage
-          const savedTracks = JSON.parse(localStorage.getItem('audioTracks') || '[]');
-          savedTracks.push(newAudio);
-          localStorage.setItem('audioTracks', JSON.stringify(savedTracks));
-          
-          // Update audio player source
-          if (audioPlayerRef.current) {
-            audioPlayerRef.current.src = objectUrl;
-            await audioPlayerRef.current.load();
-          }
-          
-          setA11yMessage(`Audio track ${file.name} loaded successfully`);
-        } catch (error) {
-          console.error('Error uploading audio track:', error);
-          setAudioError('Failed to upload audio track');
-        }
+      case 'visualGuideEnabled':
+        setVisualGuideEnabled(value as boolean);
         break;
-      }
+      case 'movementGuideEnabled':
+        setMovementGuideEnabled(value as boolean);
+        break;
+      case 'targetHasGlow':
+        setTargetHasGlow(value as boolean);
+        break;
+      case 'targetColor':
+        setTargetColor(value as string);
+        break;
+      case 'sessionDuration':
+        // Update the session duration in the audio track config
+        setAudioTrackConfig(prev => ({
+          ...prev,
+          sessionDuration: value as number
+        }));
+        break;
       default:
-        console.warn(`Unknown setting: ${setting}`);
+        console.log(`Setting ${setting} changed to ${value}`);
     }
   };
 
@@ -907,26 +852,42 @@ export default function EMDRProcessor() {
         const mostRecent = savedTracks.reduce((prev: AudioFile, curr: AudioFile) => {
           return new Date(prev.lastUsed) > new Date(curr.lastUsed) ? prev : curr;
         });
-        setSelectedAudio(mostRecent);
         
-        // Load the audio metadata
-        const audio = new Audio(mostRecent.objectUrl);
-        audio.addEventListener('loadedmetadata', () => {
-          setAudioMetadata({
-            duration: audio.duration,
-            sampleRate: 44100
+        // Don't use objectUrl from localStorage as it's no longer valid
+        // Only use the path property which points to a static file
+        if (mostRecent.path) {
+          setSelectedAudio({
+            ...mostRecent,
+            objectUrl: undefined // Clear any stale objectUrl
           });
-        });
+          
+          // Load the audio metadata using the path instead of objectUrl
+          const audio = new Audio(mostRecent.path);
+          audio.addEventListener('loadedmetadata', () => {
+            setAudioMetadata({
+              duration: audio.duration,
+              sampleRate: 44100
+            });
+          });
+        } else {
+          console.warn('Audio file has no path property, cannot load');
+        }
       }
     } catch (error) {
       console.error('Error loading saved audio tracks:', error);
     }
   }, []);
 
-  // Clean up object URLs on unmount
+  // Clean up object URLs on unmount and mode changes
   useEffect(() => {
     return () => {
       try {
+        // Clean up selected audio
+        if (selectedAudio?.objectUrl) {
+          URL.revokeObjectURL(selectedAudio.objectUrl);
+        }
+        
+        // Clean up saved tracks
         const savedTracks = JSON.parse(localStorage.getItem('audioTracks') || '[]');
         savedTracks.forEach((track: AudioFile) => {
           if (track.objectUrl) {
@@ -934,6 +895,7 @@ export default function EMDRProcessor() {
           }
         });
         
+        // Clean up saved sounds
         const savedSounds = JSON.parse(localStorage.getItem('customClickSounds') || '{}');
         Object.values(savedSounds).forEach((sound: any) => {
           if (sound.objectUrl) {
@@ -944,7 +906,7 @@ export default function EMDRProcessor() {
         console.error('Error cleaning up object URLs:', error);
       }
     };
-  }, []);
+  }, [selectedAudio]);
 
   const handleBpmChange = (newBpm: number) => {
     setBpm(newBpm);
@@ -953,36 +915,118 @@ export default function EMDRProcessor() {
     }
   };
 
+  // Update togglePlayPause to handle audio context resumption
+  const togglePlayPause = async () => {
+    try {
+      // Initialize audio context manager first
+      await audioContextManager.initialize();
+      
+      // Check if AudioEngine is initialized
+      if (!audioEngineRef.current) {
+        if (!audioPlayerRef.current) {
+          console.error('Audio player element not found');
+          setAudioError('Audio player element not found');
+          return;
+        }
+        
+        console.log('Initializing AudioEngine on demand');
+        const audioEngine = new AudioEngine();
+        await audioEngine.initialize(audioPlayerRef.current);
+        audioEngineRef.current = audioEngine;
+        
+        // Set initial configurations
+        audioEngine.updateContactSoundConfig(contactSoundConfig);
+        audioEngine.setAudioMode(audioMode);
+      }
+
+      // Ensure audio context is running
+      if (audioEngineRef.current.getContext()?.state === 'suspended') {
+        await audioEngineRef.current.resumeContext();
+        console.log('Audio context resumed');
+      }
+
+      if (isPlaying) {
+        audioEngineRef.current.stopAll();
+        setIsPlaying(false);
+        setA11yMessage('Playback stopped');
+      } else {
+        // Ensure audio element is ready
+        if (audioPlayerRef.current && audioPlayerRef.current.readyState < 2) {
+          await new Promise<void>((resolve, reject) => {
+            const handleCanPlay = () => {
+              audioPlayerRef.current?.removeEventListener('canplay', handleCanPlay);
+              audioPlayerRef.current?.removeEventListener('error', handleError);
+              resolve();
+            };
+            
+            const handleError = (e: Event) => {
+              const error = audioPlayerRef.current?.error;
+              console.error('Audio loading error:', error);
+              audioPlayerRef.current?.removeEventListener('canplay', handleCanPlay);
+              audioPlayerRef.current?.removeEventListener('error', handleError);
+              reject(new Error(`Failed to load audio: ${error?.message || 'Unknown error'}`));
+            };
+
+            audioPlayerRef.current?.addEventListener('canplay', handleCanPlay);
+            audioPlayerRef.current?.addEventListener('error', handleError);
+          });
+        }
+
+        // Start playback
+        const success = await audioEngineRef.current.startPlayback();
+        console.log('Playback start result:', success);
+
+        if (!success) {
+          console.warn('Failed to start audio playback, but continuing with visual target');
+          setAudioError('Failed to start audio playback');
+        } else {
+          setAudioError(null);
+          setIsPlaying(true);
+          setA11yMessage('Playback started');
+        }
+      }
+    } catch (error) {
+      console.error('Error in togglePlayPause:', error);
+      setAudioError('Failed to control audio playback');
+      setA11yMessage('Error controlling playback');
+    }
+  };
+
   return (
-    <div className="relative min-h-screen">
+    <div className={`relative w-full h-screen ${isDarkMode ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'}`}>
       {/* Background layer */}
       <div className={`fixed inset-0 ${isDarkMode ? 'bg-gray-900' : 'bg-white'}`} />
       
-      {/* Canvas layer */}
-      <canvas 
-        ref={canvasRef}
-        className="fixed inset-0 z-10"
-        aria-label="EMDR visual target canvas"
-        role="img"
-        aria-live="polite"
-        style={{ pointerEvents: 'none' }}
-      />
-
-      {/* Content layer */}
+      {/* Content layer - increase z-index to be above canvas */}
       <div className="relative z-20">
         {/* Audio elements */}
         <audio ref={menuOpenSoundRef} src="/sounds/menu-open.mp3" preload="auto" />
         <audio ref={menuCloseSoundRef} src="/sounds/menu-close.mp3" preload="auto" />
         <audio ref={playStatusSoundRef} src="/sounds/status-change.mp3" preload="auto" />
-        <audio ref={audioPlayerRef} loop={true}>
+        <audio 
+          ref={audioPlayerRef} 
+          preload="auto"
+          onError={(e) => {
+            const error = e.currentTarget.error;
+            console.error('Audio element error:', {
+              code: error?.code,
+              message: error?.message,
+              currentSrc: e.currentTarget.currentSrc,
+              readyState: e.currentTarget.readyState,
+              networkState: e.currentTarget.networkState
+            });
+            setAudioError(`Audio loading error: ${error?.message || 'Unknown error'}`);
+          }}
+        >
           <source src="/audio/sine-440hz.mp3" type="audio/mpeg" />
+          <source src="/audio/sine-440hz.ogg" type="audio/ogg" />
           Your browser does not support the audio element.
         </audio>
 
         {/* Header */}
         <div className="flex justify-between items-center p-4">
           <button 
-            className={`${isDarkMode ? 'text-white' : 'text-gray-800'}`}
+            className={`${isDarkMode ? 'text-white' : 'text-gray-800'} z-30`}
             onClick={toggleMenu}
             aria-label="Toggle menu"
           >
@@ -1006,24 +1050,32 @@ export default function EMDRProcessor() {
           onClose={() => setIsMenuOpen(false)}
           isSessionActive={isPlaying}
           settings={{
-            visualIntensity,
+            visualIntensity: decimalToPercentage(visualIntensity),
             targetShape,
             audioMode,
             isDarkMode,
-            bpm
+            bpm,
+            audioFeedbackEnabled,
+            visualGuideEnabled,
+            movementGuideEnabled,
+            targetHasGlow,
+            targetColor,
+            sessionDuration: audioTrackConfig.sessionDuration,
           }}
           onSettingChange={handleSettingChange}
           audioMode={audioMode}
           onAudioModeChange={handleAudioModeChange}
           bpm={bpm}
           onBpmChange={handleBpmChange}
-          onAudioSelect={setSelectedAudio}
-          selectedAudio={selectedAudio}
+          onAudioSelect={(audio) => {
+            // Handle audio selection
+          }}
+          selectedAudio={selectedAudio?.name || ''}
           audioMetadata={audioMetadata}
         />
 
-        {/* Controls - z-20 to be above canvas but below menu */}
-        <div className={`fixed bottom-6 left-1/2 transform -translate-x-1/2 ${isDarkMode ? 'bg-gray-800' : 'bg-gray-200'} bg-opacity-80 p-4 rounded-full shadow-lg`}>
+        {/* Controls - z-20 to be above canvas */}
+        <div className={`fixed bottom-6 left-1/2 transform -translate-x-1/2 ${isDarkMode ? 'bg-gray-800' : 'bg-gray-200'} bg-opacity-80 p-4 rounded-full shadow-lg z-20`}>
           {audioMode === 'click' ? (
             <button
               onClick={togglePlayPause}
@@ -1082,8 +1134,24 @@ export default function EMDRProcessor() {
         {timeRemaining !== null && (
           <div className={`fixed top-6 left-1/2 transform -translate-x-1/2 ${
             isDarkMode ? 'bg-gray-800 text-white' : 'bg-gray-200 text-gray-900'
-          } px-6 py-3 rounded-full text-2xl font-bold z-20`}>
-            {formatTime(timeRemaining)}
+          } px-6 py-3 rounded-full text-2xl font-bold z-20 flex flex-col items-center ${
+            timeRemaining <= 30 ? 'animate-pulse' : ''
+          }`}>
+            <div className="text-3xl">{formatTime(timeRemaining)}</div>
+            <div className="text-xs mt-1">Session Time Remaining</div>
+            <div className="w-full h-1 bg-gray-600 rounded-full mt-2 overflow-hidden">
+              <div 
+                className={`h-full ${timeRemaining <= 30 ? 'bg-red-500' : isDarkMode ? 'bg-blue-500' : 'bg-blue-600'}`} 
+                style={{ 
+                  width: `${(timeRemaining / audioTrackConfig.sessionDuration) * 100}%`,
+                  transition: 'width 1s linear'
+                }}
+                aria-valuenow={timeRemaining}
+                aria-valuemin={0}
+                aria-valuemax={audioTrackConfig.sessionDuration}
+                role="progressbar"
+              ></div>
+            </div>
           </div>
         )}
 
@@ -1091,6 +1159,32 @@ export default function EMDRProcessor() {
         <div className="sr-only" aria-live="polite">
           {a11yMessage}
         </div>
+
+        {/* Show either the VisualTarget or EMDRTarget, but not both */}
+        {isPlaying ? (
+          <EMDRTarget
+            isActive={true}
+            speed={speed}
+            size={targetSize}
+            color={targetColor}
+            shape={targetShape}
+            hasGlow={targetHasGlow}
+            movementPattern="ping-pong"
+            intensity={1}
+            visualIntensity={visualIntensity}
+          />
+        ) : (
+          <VisualTarget
+            x={0}
+            y={0}
+            size={50}
+            color={targetColor}
+            shape={targetShape}
+            isActive={false}
+            isGlowing={targetHasGlow}
+            onTargetClick={() => {}}
+          />
+        )}
       </div>
     </div>
   );

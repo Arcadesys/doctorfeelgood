@@ -1,6 +1,5 @@
-// Audio context singleton to ensure we only create one
-let audioContext: AudioContext | null = null;
-let audioContextInitialized = false;
+// Audio utilities for managing audio elements and sources
+import { audioContextManager } from './audioContextManager';
 
 // Map to store MediaElementSource nodes for each audio element
 const mediaElementSources = new WeakMap<HTMLAudioElement, MediaElementAudioSourceNode>();
@@ -8,41 +7,34 @@ const mediaElementSources = new WeakMap<HTMLAudioElement, MediaElementAudioSourc
 // Add debugging flag to help troubleshoot
 const DEBUG_AUDIO = true;
 
-export const getAudioContext = (): AudioContext => {
-  if (!audioContext) {
-    // Just create the context but don't start it yet
-    audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-    if (DEBUG_AUDIO) console.log('New AudioContext created with state:', audioContext.state);
-  }
-  return audioContext;
+export const getAudioContext = (): AudioContext | null => {
+  return audioContextManager.getContext();
 };
 
 export const getMediaElementSource = (audioElement: HTMLAudioElement): MediaElementAudioSourceNode => {
+  // Check if we already have a source for this element
   let source = mediaElementSources.get(audioElement);
+  
   if (!source) {
-    const ctx = getAudioContext();
-    source = ctx.createMediaElementSource(audioElement);
+    const context = audioContextManager.getContext();
+    if (!context) {
+      throw new Error('Audio context not initialized');
+    }
+    
+    // Create new source
+    source = context.createMediaElementSource(audioElement);
     mediaElementSources.set(audioElement, source);
-    if (DEBUG_AUDIO) console.log('Created new MediaElementSource for audio element');
+    
+    if (DEBUG_AUDIO) {
+      console.log('Created new MediaElementSource for audio element');
+    }
   }
+  
   return source;
 };
 
 export const resumeAudioContext = async (): Promise<void> => {
-  const ctx = getAudioContext();
-  // Only attempt to resume if we're in a suspended state
-  if (ctx.state === 'suspended') {
-    try {
-      await ctx.resume();
-      audioContextInitialized = true;
-      if (DEBUG_AUDIO) console.log('AudioContext successfully resumed');
-    } catch (err) {
-      console.error('Failed to resume AudioContext:', err);
-    }
-  } else {
-    audioContextInitialized = true;
-    if (DEBUG_AUDIO) console.log('AudioContext already active:', ctx.state);
-  }
+  await audioContextManager.resumeContext();
 };
 
 export interface AudioProcessor {

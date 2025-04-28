@@ -22,21 +22,21 @@ const VisualTarget: React.FC<VisualTargetProps> = ({
   isGlowing = false,
   onTargetClick,
 }) => {
-  useEffect(() => {
-    document.documentElement.style.setProperty('--target-size', `${size}px`);
-    document.documentElement.style.setProperty('--target-color', color);
-  }, [size, color]);
+  // Set CSS variables on the element itself for proper scoping
+  const styleVars = {
+    '--target-size': `${size}px`,
+    '--target-color': color,
+    left: `${x}px`,
+    top: `${y}px`,
+    width: `var(--target-size)`,
+    height: `var(--target-size)`,
+    background: 'var(--target-color)',
+  } as React.CSSProperties;
 
   return (
     <div
       className="visual-target"
-      style={{
-        left: `${x}px`,
-        top: `${y}px`,
-        width: `${size}px`,
-        height: `${size}px`,
-        backgroundColor: color,
-      }}
+      style={styleVars}
       data-shape={shape}
       data-active={isActive}
       data-glow={isGlowing}
@@ -48,4 +48,4 @@ const VisualTarget: React.FC<VisualTargetProps> = ({
   );
 };
 
-export default VisualTarget; 
+export default VisualTarget;

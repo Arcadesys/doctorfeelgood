@@ -18,10 +18,6 @@
     "setup-tests": "npm install --legacy-peer-deps"
   },
   "dependencies": {
-    "@chakra-ui/next-js": "^2.2.0",
-    "@chakra-ui/react": "^2.8.2",
-    "@emotion/react": "^11.11.3",
-    "@emotion/styled": "^11.11.0",
     "framer-motion": "^11.0.5",
     "glob": "^10.3.10",
     "mkdirp": "^3.0.1",

@@ -1,16 +1,64 @@
+.unified-settings-overlay {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  pointer-events: auto;
+}
+
 .unified-settings {
-  padding: 1rem;
+  width: 100%;
+  max-width: 400px;
   background: var(--surface-color);
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  color: var(--text-primary);
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -4px 32px rgba(0, 0, 0, 0.25);
+  padding: 2rem 1.5rem 1.5rem 1.5rem;
+  position: relative;
+  margin-bottom: 2.5vh;
+  min-height: 0;
+  max-height: 90vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  animation: slideUpDrawer 0.25s cubic-bezier(.4, 0, .2, 1);
+}
+
+@keyframes slideUpDrawer {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.close-btn {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background: none;
+  border: none;
+  font-size: 2rem;
+  color: var(--text-primary);
+  cursor: pointer;
+  z-index: 10;
 }
 
 .settings-section {
-  margin-bottom: 1.5rem;
+  margin-bottom: 2rem;
 }
 
-.settings-section h2 {
-  font-size: 1.2rem;
+.settings-section h3 {
+  font-size: 1.1rem;
   margin-bottom: 0.75rem;
   color: var(--text-primary);
 }
@@ -18,10 +66,11 @@
 .mode-selector {
   display: flex;
   gap: 0.5rem;
+  margin-bottom: 1rem;
 }
 
 .mode-selector button {
-  flex: 1;
+  flex: 1 1;
   padding: 0.5rem;
   border: 2px solid var(--primary-color);
   border-radius: 4px;
@@ -36,39 +85,71 @@
   color: white;
 }
 
+.audio-upload-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: var(--text-primary);
+}
+
+.audio-upload-group input[type="file"] {
+  display: block;
+  margin-top: 0.25rem;
+}
+
 .bpm-control {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
 }
 
-.bpm-control label {
-  color: var(--text-primary);
-  font-weight: 500;
+.bpm-buttons {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
 }
 
-.bpm-control input[type="range"] {
-  width: 100%;
-  height: 4px;
-  background: var(--primary-color);
-  border-radius: 2px;
-  outline: none;
-  -webkit-appearance: none;
-}
-
-.bpm-control input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 16px;
-  height: 16px;
-  background: white;
+.bpm-buttons button {
+  flex: 1 1;
+  padding: 0.5rem;
   border: 2px solid var(--primary-color);
-  border-radius: 50%;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-primary);
   cursor: pointer;
-  transition: transform 0.2s ease;
+  transition: all 0.2s ease;
 }
 
-.bpm-control input[type="range"]::-webkit-slider-thumb:hover {
-  transform: scale(1.1);
+.bpm-buttons button.active {
+  background: var(--primary-color);
+  color: white;
+}
+
+.switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.theme-toggle {
+  width: 100%;
+  padding: 0.75rem;
+  border-radius: 6px;
+  background: var(--surface-secondary);
+  color: var(--text-primary);
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: none;
+  cursor: pointer;
+  margin-top: 0.5rem;
+}
+
+.theme-toggle:hover {
+  background: var(--primary-color);
+  color: white;
 }
 
 .audio-metadata {
@@ -88,4 +169,4 @@
   margin: 0.25rem 0;
   color: var(--text-secondary);
   font-size: 0.9rem;
-} 
+}

@@ -2,9 +2,6 @@
 
 import { Inter } from "next/font/google";
 import "./globals.css";
-import { ChakraProvider, ColorModeScript } from '@chakra-ui/react'
-import { CacheProvider } from '@chakra-ui/next-js'
-import theme from '@/theme'
 
 const inter = Inter({
   variable: "--font-inter",
@@ -19,18 +16,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={inter.variable}>
-      <head>
-        <ColorModeScript initialColorMode={theme.config.initialColorMode} />
-      </head>
+      <head />
       <body
         className="antialiased"
         style={{ overscrollBehaviorX: "auto" }}
       >
-        <CacheProvider>
-          <ChakraProvider theme={theme}>
-            {children}
-          </ChakraProvider>
-        </CacheProvider>
+        {children}
       </body>
     </html>
   );

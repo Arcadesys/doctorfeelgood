@@ -1,6 +1,7 @@
 import React from 'react';
 import { Drawer, DrawerOverlay, DrawerContent, DrawerCloseButton, DrawerHeader, DrawerBody, VStack, Box, Heading, FormControl, FormLabel, Select, Slider, SliderTrack, SliderThumb, SliderFilledTrack, useColorMode, Switch } from '@chakra-ui/react';
 import { AudioMetadata, AudioFile } from '@/types/audio';
+import '../../styles/UnifiedSettings.css';
 
 // Format time in seconds to MM:SS format
 const formatTime = (seconds: number): string => {
@@ -405,4 +406,4 @@ const UnifiedSettings: React.FC<UnifiedSettingsProps> = ({
   );
 };
 
-export default UnifiedSettings; 
+export default UnifiedSettings;

@@ -56,6 +56,35 @@ Object.defineProperty(window, 'MediaElementSource', {
 global.fetch = jest.fn(() =>
   Promise.resolve({
     ok: true,
-    arrayBuffer: () => Promise.resolve(new ArrayBuffer(1024))
-  })
+    status: 200,
+    statusText: 'OK',
+    headers: new Headers(),
+    redirected: false,
+    type: 'default' as ResponseType,
+    url: '',
+    arrayBuffer: () => Promise.resolve(new ArrayBuffer(1024)),
+    blob: () => Promise.resolve(new Blob()),
+    formData: () => Promise.resolve(new FormData()),
+    json: () => Promise.resolve({}),
+    text: () => Promise.resolve(''),
+    body: null,
+    bodyUsed: false,
+    clone: () => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: new Headers(),
+      redirected: false,
+      type: 'default' as ResponseType,
+      url: '',
+      arrayBuffer: () => Promise.resolve(new ArrayBuffer(1024)),
+      blob: () => Promise.resolve(new Blob()),
+      formData: () => Promise.resolve(new FormData()),
+      json: () => Promise.resolve({}),
+      text: () => Promise.resolve(''),
+      body: null,
+      bodyUsed: false,
+      clone: () => ({})
+    })
+  } as Response)
 ); 

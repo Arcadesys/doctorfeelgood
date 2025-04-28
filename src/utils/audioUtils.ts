@@ -54,11 +54,11 @@ export const createAudioProcessor = async (
   title: string
 ): Promise<AudioProcessor> => {
   // Initialize the audio context right away
-  const ctx = getAudioContext();
+  let ctx = getAudioContext();
   await resumeAudioContext();
   
   // Create audio element for streaming
-  const audioElement = new Audio();
+  let audioElement = new Audio();
   audioElement.crossOrigin = 'anonymous';
   audioElement.src = audioUrl;
   audioElement.preload = 'auto';

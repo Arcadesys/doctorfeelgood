@@ -155,6 +155,13 @@ export const createAudioProcessor = async (
     try {
       // Get or create the MediaElementSource
       source = getMediaElementSource(audioElement);
+      if (!ctx) {
+        ctx = getAudioContext();
+        if (!ctx) {
+          throw new Error('Audio context is not initialized');
+        }
+      }
+      const now = ctx!.currentTime;
       gainNode = ctx.createGain();
       
       // Check if StereoPannerNode is supported
@@ -257,8 +264,13 @@ export const createAudioProcessor = async (
         
         // Test panner after successful playback
         if (pannerNode) {
-          // Perform a quick ping-pong to ensure the panner is working
-          const now = ctx.currentTime;
+          if (!ctx) {
+            ctx = getAudioContext();
+            if (!ctx) {
+              throw new Error('Audio context is not initialized');
+            }
+          }
+          const now = ctx!.currentTime;
           pannerNode.pan.setValueAtTime(-0.5, now);
           pannerNode.pan.setValueAtTime(0.5, now + 0.1);
           pannerNode.pan.setValueAtTime(0, now + 0.2);
@@ -348,7 +360,7 @@ export const createAudioProcessor = async (
         
         // Use the automation API for smoother transitions
         // and to ensure the value actually gets applied
-        const now = ctx.currentTime;
+        const now = ctx!.currentTime;
         
         // Apply with a slight ramp for smoother transition 
         // (higher values = more noticeable change)
@@ -407,4 +419,4 @@ export const createAudioProcessor = async (
       endedCallback = callback;
     }
   };
-}; 
+};

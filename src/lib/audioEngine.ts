@@ -328,7 +328,13 @@ export class AudioEngine {
       this.audioElement.currentTime = 0;
       
       // Start playback
-      await this.audioElement.play();
+      const playPromise = this.audioElement.play();
+      
+      // Handle the play promise properly
+      if (playPromise !== undefined) {
+        await playPromise;
+      }
+      
       this.isPlaying = true;
       
       // Set up ended handler
@@ -437,13 +443,11 @@ export class AudioEngine {
 
   // Resume audio context if suspended
   public async resumeContext(): Promise<void> {
-    if (this.audioContext?.state === 'suspended') {
-      await this.audioContext.resume();
-    }
+    await audioContextManager.resumeContext();
   }
 
   // Get the audio context
   public getContext(): AudioContext | null {
-    return this.audioContext;
+    return audioContextManager.getContext();
   }
 } 

@@ -70,7 +70,7 @@ export default function EMDRProcessor() {
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
   const [animationFrameId, setAnimationFrameId] = useState<number | null>(null);
   const [panValue, setPanValue] = useState(0);
-  const [targetHasGlow] = useState(true); // Always enabled for better visibility
+  const [targetHasGlow, setTargetHasGlow] = useState(true); // Make this toggleable
   const [targetSize] = useState(50); // Fixed size
   const [targetColor, setTargetColor] = useState('#ffffff'); // Add targetColor state
 
@@ -189,10 +189,7 @@ export default function EMDRProcessor() {
       }
 
       try {
-        // First, ensure the audio context is initialized
-        await audioContextManager.initialize();
-        
-        // Create and initialize the audio engine first
+        // Create and initialize the audio engine
         const audioEngine = new AudioEngine();
         console.log('Created new AudioEngine instance');
 
@@ -208,7 +205,7 @@ export default function EMDRProcessor() {
         
         // Store in ref
         audioEngineRef.current = audioEngine;
-
+        
         // Set initial audio source and ensure it's loaded
         if (audioMode === 'track' && selectedAudio?.path && audioPlayerRef.current) {
           // Reset the audio element
@@ -252,29 +249,21 @@ export default function EMDRProcessor() {
 
         // Clear any previous errors
         setAudioError(null);
-        initializationAttempted = true;
       } catch (error) {
-        console.error('Error initializing AudioEngine:', error);
+        console.error('Error initializing audio:', error);
         setAudioError(error instanceof Error ? error.message : 'Failed to initialize audio');
-        // Reset initialization flag to allow retry
-        initializationAttempted = false;
       } finally {
         initializationInProgress = false;
+        initializationAttempted = true;
       }
     };
 
-    // Initialize on mount
     init();
-    
-    // Clean up on unmount
+
     return () => {
       mounted = false;
-      if (audioEngineRef.current) {
-        audioEngineRef.current.dispose();
-        audioEngineRef.current = null;
-      }
     };
-  }, [audioMode, contactSoundConfig, selectedAudio]);
+  }, []);
   
   // Sync configurations with audio engine when they change
   useEffect(() => {
@@ -721,54 +710,6 @@ export default function EMDRProcessor() {
       if (audioEngineRef.current) {
         audioEngineRef.current.setAudioMode(mode);
         setAudioMode(mode);
-        
-        if (mode === 'track' && selectedAudio) {
-          if (audioPlayerRef.current) {
-            // Reset the audio element
-            audioPlayerRef.current.pause();
-            audioPlayerRef.current.currentTime = 0;
-            
-            // Use objectUrl if available, otherwise use path
-            const audioSource = selectedAudio.objectUrl || selectedAudio.path;
-            if (!audioSource) {
-              console.error('No audio source available');
-              setAudioError('No audio source available');
-              return;
-            }
-            
-            // Set new source
-            audioPlayerRef.current.src = audioSource;
-            
-            // Wait for the audio to be loaded
-            await new Promise<void>((resolve, reject) => {
-              const handleCanPlay = () => {
-                console.log('Audio can play');
-                audioPlayerRef.current?.removeEventListener('canplay', handleCanPlay);
-                audioPlayerRef.current?.removeEventListener('error', handleError);
-                resolve();
-              };
-              
-              const handleError = (e: Event) => {
-                const error = audioPlayerRef.current?.error;
-                console.error('Audio loading error:', {
-                  code: error?.code,
-                  message: error?.message,
-                  networkState: audioPlayerRef.current?.networkState,
-                  readyState: audioPlayerRef.current?.readyState
-                });
-                audioPlayerRef.current?.removeEventListener('canplay', handleCanPlay);
-                audioPlayerRef.current?.removeEventListener('error', handleError);
-                reject(new Error(`Failed to load audio: ${error?.message || 'Unknown error'}`));
-              };
-
-              audioPlayerRef.current?.addEventListener('canplay', handleCanPlay);
-              audioPlayerRef.current?.addEventListener('error', handleError);
-              
-              // Start loading
-              audioPlayerRef.current?.load();
-            });
-          }
-        }
       }
     } catch (error) {
       console.error('Error changing audio mode:', error);
@@ -776,69 +717,65 @@ export default function EMDRProcessor() {
     }
   };
 
-  // Handle file upload
-  const handleAudioUpload = useCallback(async (file: File) => {
-    try {
-      // Revoke any existing object URL to prevent memory leaks
-      if (selectedAudio?.objectUrl) {
-        URL.revokeObjectURL(selectedAudio.objectUrl);
-      }
-
-      const objectUrl = URL.createObjectURL(file);
-      const newAudio: AudioFile = {
-        id: Date.now().toString(),
-        name: file.name,
-        lastUsed: new Date().toLocaleString(),
-        objectUrl
-      };
-      
-      setSelectedAudio(newAudio);
-      setAudioFiles(prev => [...prev, newAudio]);
-      
-      if (audioPlayerRef.current) {
-        // Reset the audio element
-        audioPlayerRef.current.pause();
-        audioPlayerRef.current.currentTime = 0;
-        
-        // Set new source
-        audioPlayerRef.current.src = objectUrl;
-        
-        // Wait for the audio to be loaded
-        await new Promise<void>((resolve, reject) => {
-          const handleCanPlay = () => {
-            console.log('Audio can play');
-            audioPlayerRef.current?.removeEventListener('canplay', handleCanPlay);
-            audioPlayerRef.current?.removeEventListener('error', handleError);
-            resolve();
-          };
+  // Effect to handle audio mode changes
+  useEffect(() => {
+    const loadAudio = async () => {
+      if (audioMode === 'track' && selectedAudio && audioPlayerRef.current) {
+        try {
+          // Reset the audio element
+          audioPlayerRef.current.pause();
+          audioPlayerRef.current.currentTime = 0;
           
-          const handleError = (e: Event) => {
-            const error = audioPlayerRef.current?.error;
-            console.error('Audio loading error:', {
-              code: error?.code,
-              message: error?.message,
-              networkState: audioPlayerRef.current?.networkState,
-              readyState: audioPlayerRef.current?.readyState
-            });
-            audioPlayerRef.current?.removeEventListener('canplay', handleCanPlay);
-            audioPlayerRef.current?.removeEventListener('error', handleError);
-            reject(new Error(`Failed to load audio: ${error?.message || 'Unknown error'}`));
-          };
-
-          audioPlayerRef.current?.addEventListener('canplay', handleCanPlay);
-          audioPlayerRef.current?.addEventListener('error', handleError);
+          // Only use path property, not objectUrl which may be stale
+          const audioSource = selectedAudio.path;
+          if (!audioSource) {
+            console.error('No audio source available');
+            setAudioError('No audio source available');
+            return;
+          }
           
-          // Start loading
-          audioPlayerRef.current?.load();
-        });
+          // Set new source
+          audioPlayerRef.current.src = audioSource;
+          
+          // Wait for the audio to be loaded
+          await new Promise<void>((resolve, reject) => {
+            const handleCanPlay = () => {
+              console.log('Audio can play');
+              audioPlayerRef.current?.removeEventListener('canplay', handleCanPlay);
+              audioPlayerRef.current?.removeEventListener('error', handleError);
+              resolve();
+            };
+            
+            const handleError = (e: Event) => {
+              const error = audioPlayerRef.current?.error;
+              console.error('Audio loading error:', {
+                code: error?.code,
+                message: error?.message,
+                networkState: audioPlayerRef.current?.networkState,
+                readyState: audioPlayerRef.current?.readyState
+              });
+              audioPlayerRef.current?.removeEventListener('canplay', handleCanPlay);
+              audioPlayerRef.current?.removeEventListener('error', handleError);
+              reject(new Error(`Failed to load audio: ${error?.message || 'Unknown error'}`));
+            };
+
+            audioPlayerRef.current?.addEventListener('canplay', handleCanPlay);
+            audioPlayerRef.current?.addEventListener('error', handleError);
+            
+            // Start loading
+            audioPlayerRef.current?.load();
+          });
+          
+          setAudioError(null);
+        } catch (error) {
+          console.error('Error loading audio:', error);
+          setAudioError(error instanceof Error ? error.message : 'Failed to load audio');
+        }
       }
-      
-      setA11yMessage(`Audio file ${file.name} loaded successfully`);
-    } catch (error) {
-      console.error('Error uploading audio file:', error);
-      setA11yMessage('Error uploading audio file');
-    }
-  }, [selectedAudio]);
+    };
+    
+    loadAudio();
+  }, [audioMode, selectedAudio]);
 
   // Handle setting changes
   const handleSettingChange = async (setting: string, value: unknown) => {
@@ -868,7 +805,7 @@ export default function EMDRProcessor() {
         setMovementGuideEnabled(value as boolean);
         break;
       case 'targetHasGlow':
-        // This is handled by the state variable
+        setTargetHasGlow(value as boolean);
         break;
       case 'targetColor':
         setTargetColor(value as string);
@@ -916,16 +853,26 @@ export default function EMDRProcessor() {
         const mostRecent = savedTracks.reduce((prev: AudioFile, curr: AudioFile) => {
           return new Date(prev.lastUsed) > new Date(curr.lastUsed) ? prev : curr;
         });
-        setSelectedAudio(mostRecent);
         
-        // Load the audio metadata
-        const audio = new Audio(mostRecent.objectUrl);
-        audio.addEventListener('loadedmetadata', () => {
-          setAudioMetadata({
-            duration: audio.duration,
-            sampleRate: 44100
+        // Don't use objectUrl from localStorage as it's no longer valid
+        // Only use the path property which points to a static file
+        if (mostRecent.path) {
+          setSelectedAudio({
+            ...mostRecent,
+            objectUrl: undefined // Clear any stale objectUrl
           });
-        });
+          
+          // Load the audio metadata using the path instead of objectUrl
+          const audio = new Audio(mostRecent.path);
+          audio.addEventListener('loadedmetadata', () => {
+            setAudioMetadata({
+              duration: audio.duration,
+              sampleRate: 44100
+            });
+          });
+        } else {
+          console.warn('Audio file has no path property, cannot load');
+        }
       }
     } catch (error) {
       console.error('Error loading saved audio tracks:', error);
@@ -972,6 +919,9 @@ export default function EMDRProcessor() {
   // Update togglePlayPause to handle audio context resumption
   const togglePlayPause = async () => {
     try {
+      // Initialize audio context manager first
+      await audioContextManager.initialize();
+      
       // Check if AudioEngine is initialized
       if (!audioEngineRef.current) {
         if (!audioPlayerRef.current) {
@@ -1231,6 +1181,7 @@ export default function EMDRProcessor() {
               visualIntensity: Math.round(visualIntensity * 100), // Convert decimal to percentage
               targetShape,
               targetColor,
+              targetHasGlow, // Pass the glow setting to VisualTarget
             }}
           />
         )}

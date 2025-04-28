@@ -81,7 +81,11 @@ class AudioContextManager {
 
     if (this.audioContext.state === 'suspended') {
       try {
-        await this.audioContext.resume();
+        const resumePromise = this.audioContext.resume();
+        if (resumePromise !== undefined) {
+          await resumePromise;
+        }
+        console.log('Audio context resumed successfully');
       } catch (error) {
         console.error('Failed to resume audio context:', error);
         throw error;

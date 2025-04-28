@@ -56,7 +56,8 @@ export function useAudioSynthesis() {
     }
     
     if (synth && !isPlaying) {
-      synth.triggerAttack(options.frequency);
+      const frequency = options.frequency ?? 440; // Default to A4 if frequency is undefined
+      synth.triggerAttack(frequency);
       setIsPlaying(true);
     }
   }, [synth, isPlaying, options.frequency]);

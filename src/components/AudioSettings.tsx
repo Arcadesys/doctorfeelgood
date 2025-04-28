@@ -8,6 +8,7 @@ interface AudioSettingsProps {
   onAudioSelect: (audio: AudioFile | null) => void;
   selectedAudio: AudioFile | null;
   audioMetadata: AudioMetadata | null;
+  audioFiles: AudioFile[];
 }
 
 export function AudioSettings({
@@ -18,6 +19,7 @@ export function AudioSettings({
   onAudioSelect,
   selectedAudio,
   audioMetadata,
+  audioFiles,
 }: AudioSettingsProps) {
   return (
     <div className="audio-settings" role="region" aria-label="Audio Settings">

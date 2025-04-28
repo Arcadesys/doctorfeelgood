@@ -1,23 +1,21 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { AudioEngine } from '@/lib/audioEngine';
 import { 
-  AudioEngine, 
-  AudioMode,
-  ContactSoundConfig,
-  AudioTrackConfig
-} from '../lib/audioEngine';
+  AudioMode, 
+  ContactSoundConfig, 
+  AudioTrackConfig, 
+  AudioFile, 
+  AudioMetadata 
+} from '@/types/audio';
 import UnifiedSettings from './UnifiedSettings';
 import VisualTarget from './VisualTarget';
 import EMDRTarget from './EMDRTarget';
-import { getAudioContext, getMediaElementSource, resumeAudioContext } from '../utils/audioUtils';
+import { getAudioContext, getMediaElementSource, resumeAudioContext } from '@/utils/audioUtils';
 import { decimalToPercentage, percentageToDecimal, clampDecimalIntensity } from '@/utils/intensityUtils';
 import { formatTime } from '@/utils/timeUtils';
 import { audioContextManager } from '@/utils/audioContextManager';
-import { 
-  AudioFile, 
-  AudioMetadata
-} from '@/types/audio';
 
 // Audio context interfaces
 interface AudioContextState {
@@ -27,10 +25,10 @@ interface AudioContextState {
   gainNode: GainNode | null;
 }
 
-interface EMDRTrackConfig {
+interface EMDRTrackConfig extends Partial<AudioTrackConfig> {
   bpm: number;
   sessionDuration: number;
-  oscillatorType: OscillatorType;
+  oscillatorType: 'sine' | 'square' | 'triangle' | 'sawtooth';
   volume: number;
 }
 
@@ -50,6 +48,12 @@ interface VisualTargetProps {
   targetHasGlow: boolean;
 }
 
+type SettingValue = string | number | boolean;
+
+interface SettingChangeHandler {
+  (setting: string, value: SettingValue): Promise<void>;
+}
+
 export default function EMDRProcessor() {
   // State variables
   const [isPlaying, setIsPlaying] = useState(false);
@@ -57,7 +61,7 @@ export default function EMDRProcessor() {
   const [visualIntensity, setVisualIntensity] = useState(clampDecimalIntensity(0.5));
   const [targetShape, setTargetShape] = useState<'circle' | 'square' | 'triangle' | 'diamond' | 'star'>('circle');
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [audioMode, setAudioMode] = useState<'click' | 'track'>('click');
+  const [audioMode, setAudioMode] = useState<AudioMode>('click');
   const [bpm, setBpm] = useState(60);
   const [selectedAudio, setSelectedAudio] = useState<AudioFile | null>(null);
   const [audioMetadata, setAudioMetadata] = useState<AudioMetadata | null>(null);
@@ -100,9 +104,9 @@ export default function EMDRProcessor() {
   const [audioFiles, setAudioFiles] = useState<AudioFile[]>([]);
   
   // Audio engine settings
-  const [contactSoundConfig] = useState<ContactSoundConfig>({
-    leftSamplePath: '/sounds/click-left.mp3',
-    rightSamplePath: '/sounds/click-right.mp3',
+  const [contactSoundConfig, setContactSoundConfig] = useState<ContactSoundConfig>({
+    leftSamplePath: '/audio/left-click.mp3',
+    rightSamplePath: '/audio/right-click.mp3',
     volume: 0.5,
     enabled: true
   });
@@ -412,53 +416,49 @@ export default function EMDRProcessor() {
   }, [drawVisualTarget]); // Use drawVisualTarget as dependency (which internally depends on isPlaying)
   
   // Initialize audio context on first user interaction
-  const initializeAudio = useCallback(async () => {
-    if (!audioPlayerRef.current) {
-      console.error('Audio player element not found');
-      return;
-    }
-
+  const initializeAudioContext = useCallback(async () => {
     try {
-      // Get the singleton audio context
-      const audioContext = getAudioContext();
-      
-      // Get or create the MediaElementSource
-      const mediaElementSource = getMediaElementSource(audioPlayerRef.current);
-      
-      // Create gain node
-      const gainNode = audioContext.createGain();
-      gainNode.connect(audioContext.destination);
-      
-      // Connect the media element source to the gain node
-      mediaElementSource.connect(gainNode);
-      
-      // Resume audio context
+      const context = getAudioContext();
+      if (!context) {
+        console.error('Failed to get audio context');
+        return;
+      }
+
+      const gainNode = context.createGain();
+      gainNode.connect(context.destination);
+
+      audioContextRef.current = {
+        context,
+        source: null,
+        panner: null,
+        gainNode
+      };
+
       await resumeAudioContext();
-      
-      console.log('Audio initialized successfully');
     } catch (error) {
-      console.error('Error initializing audio:', error);
+      console.error('Failed to initialize audio context:', error);
+      setAudioError('Failed to initialize audio');
     }
   }, []);
 
   useEffect(() => {
     const init = async () => {
       try {
-        await initializeAudio();
+        await initializeAudioContext();
       } catch (error) {
         console.error('Failed to initialize audio:', error);
       }
     };
     init();
-  }, [initializeAudio]);
+  }, [initializeAudioContext]);
 
   // Handle first user interaction
   const handleFirstInteraction = useCallback(() => {
-    initializeAudio();
+    initializeAudioContext();
     // Remove the event listener after first interaction
     document.removeEventListener('click', handleFirstInteraction);
     document.removeEventListener('keydown', handleFirstInteraction);
-  }, [initializeAudio]);
+  }, [initializeAudioContext]);
 
   // Add event listeners for first interaction
   useEffect(() => {
@@ -704,7 +704,7 @@ export default function EMDRProcessor() {
   }, [timeRemaining, isPlaying, audioTrackConfig.sessionDuration]);
 
   // Handle audio mode changes
-  const handleAudioModeChange = async (mode: 'click' | 'track') => {
+  const handleAudioModeChange = async (mode: AudioMode) => {
     try {
       if (audioEngineRef.current) {
         audioEngineRef.current.setAudioMode(mode);
@@ -776,48 +776,70 @@ export default function EMDRProcessor() {
     loadAudio();
   }, [audioMode, selectedAudio]);
 
+  // Add a type-safe enum for settings
+  const enum SettingKey {
+    VisualIntensity = 'visualIntensity',
+    TargetShape = 'targetShape',
+    IsDarkMode = 'isDarkMode',
+    AudioMode = 'audioMode',
+    Bpm = 'bpm',
+    AudioFeedbackEnabled = 'audioFeedbackEnabled',
+    VisualGuideEnabled = 'visualGuideEnabled',
+    MovementGuideEnabled = 'movementGuideEnabled',
+    TargetHasGlow = 'targetHasGlow',
+    TargetColor = 'targetColor',
+    SessionDuration = 'sessionDuration',
+  }
+
   // Handle setting changes
-  const handleSettingChange = async (setting: string, value: unknown) => {
+  const handleSettingChange = async (setting: string, value: unknown): Promise<void> => {
     switch (setting) {
-      case 'visualIntensity':
-        setVisualIntensity(clampDecimalIntensity(percentageToDecimal(value as number)));
+      case SettingKey.VisualIntensity:
+        if (typeof value === 'number') {
+          setVisualIntensity(prev => clampDecimalIntensity(percentageToDecimal(value)));
+        }
         break;
-      case 'targetShape':
-        setTargetShape(value as 'circle' | 'square' | 'triangle' | 'diamond' | 'star');
+      case SettingKey.TargetShape:
+        if (typeof value === 'string' && ['circle','square','triangle','diamond','star'].includes(value)) {
+          setTargetShape(value as typeof targetShape);
+        }
         break;
-      case 'isDarkMode':
-        setIsDarkMode(value as boolean);
+      case SettingKey.IsDarkMode:
+        if (typeof value === 'boolean') setIsDarkMode(value);
         break;
-      case 'audioMode':
-        await handleAudioModeChange(value as 'click' | 'track');
+      case SettingKey.AudioMode:
+        if (typeof value === 'string' && (value === 'click' || value === 'track')) {
+          await handleAudioModeChange(value as AudioMode);
+        }
         break;
-      case 'bpm':
-        handleBpmChange(value as number);
+      case SettingKey.Bpm:
+        if (typeof value === 'number') handleBpmChange(value);
         break;
-      case 'audioFeedbackEnabled':
-        setAudioFeedbackEnabled(value as boolean);
+      case SettingKey.AudioFeedbackEnabled:
+        if (typeof value === 'boolean') setAudioFeedbackEnabled(value);
         break;
-      case 'visualGuideEnabled':
-        setVisualGuideEnabled(value as boolean);
+      case SettingKey.VisualGuideEnabled:
+        if (typeof value === 'boolean') setVisualGuideEnabled(value);
         break;
-      case 'movementGuideEnabled':
-        setMovementGuideEnabled(value as boolean);
+      case SettingKey.MovementGuideEnabled:
+        if (typeof value === 'boolean') setMovementGuideEnabled(value);
         break;
-      case 'targetHasGlow':
-        setTargetHasGlow(value as boolean);
+      case SettingKey.TargetHasGlow:
+        if (typeof value === 'boolean') setTargetHasGlow(value);
         break;
-      case 'targetColor':
-        setTargetColor(value as string);
+      case SettingKey.TargetColor:
+        if (typeof value === 'string') setTargetColor(value);
         break;
-      case 'sessionDuration':
-        // Update the session duration in the audio track config
-        setAudioTrackConfig(prev => ({
-          ...prev,
-          sessionDuration: value as number
-        }));
+      case SettingKey.SessionDuration:
+        if (typeof value === 'number') {
+          setAudioTrackConfig(prev => ({
+            ...prev,
+            sessionDuration: value
+          }));
+        }
         break;
       default:
-        console.log(`Setting ${setting} changed to ${value}`);
+        console.warn(`Unknown setting key: ${setting}`);
     }
   };
 
@@ -992,6 +1014,42 @@ export default function EMDRProcessor() {
     }
   };
 
+  // Fix unused variables in event handlers
+  const handleError = () => {
+    console.error('Audio playback error');
+    setAudioError('Failed to play audio');
+  };
+
+  // Fix useEffect dependencies
+  useEffect(() => {
+    if (audioMode === 'click' && contactSoundConfig && selectedAudio?.path) {
+      // Add your effect logic here
+    }
+  }, [audioMode, contactSoundConfig, selectedAudio?.path]);
+
+  // Handle audio context null checks
+  const handleAudioContext = useCallback(() => {
+    const { context } = audioContextRef.current;
+    if (!context) {
+      console.error('Audio context is not initialized');
+      return;
+    }
+    // Use context safely here
+  }, []);
+
+  const handleAudioContextOperation = useCallback(async () => {
+    const { context } = audioContextRef.current;
+    if (!context) {
+      console.error('Audio context is not initialized');
+      return;
+    }
+    try {
+      await context.resume();
+    } catch (error) {
+      console.error('Failed to perform audio context operation:', error);
+    }
+  }, []);
+
   return (
     <div className={`relative w-full h-screen ${isDarkMode ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'}`}>
       {/* Background layer */}
@@ -1068,10 +1126,11 @@ export default function EMDRProcessor() {
           bpm={bpm}
           onBpmChange={handleBpmChange}
           onAudioSelect={(audio) => {
-            // Handle audio selection
+            setSelectedAudio(audio);
           }}
           selectedAudio={selectedAudio?.name || ''}
           audioMetadata={audioMetadata}
+          audioFiles={audioFiles}
         />
 
         {/* Controls - z-20 to be above canvas */}

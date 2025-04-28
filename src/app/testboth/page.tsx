@@ -1,6 +1,6 @@
 'use client';
 
-import { EMDRProcessor } from '@/components/EMDRProcessor';
+import EMDRProcessor from '@/components/EMDRProcessor';
 import EMDRSession from '@/components/EMDRSession';
 
 export default function TestBothPage() {
@@ -21,15 +21,9 @@ export default function TestBothPage() {
             <h2 className="text-white mb-4">EMDRSession with EMDRTarget</h2>
             <div className="h-[50vh] overflow-hidden">
               <EMDRSession
-                initialSettings={{
-                  speed: 1000,
-                  freqLeft: 200,
-                  freqRight: 200,
-                  targetSize: 40,
-                  visualIntensity: 0.8,
-                  sessionDuration: 30,
-                  oscillatorType: 'sine'
-                }}
+                defaultSpeed={1000}
+                defaultFrequencyLeft={200}
+                defaultFrequencyRight={200}
               />
             </div>
           </div>

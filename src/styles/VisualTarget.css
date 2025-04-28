@@ -16,6 +16,9 @@
   transition: all 0.3s ease-in-out;
   cursor: pointer;
   z-index: 10;
+  width: var(--target-size, 50px);
+  height: var(--target-size, 50px);
+  background: var(--target-color, #fff);
 }
 
 /* Base styles */
@@ -61,4 +64,4 @@
   .visual-target {
     transition: none;
   }
-} 
+}

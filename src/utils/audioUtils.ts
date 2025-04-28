@@ -54,11 +54,11 @@ export const createAudioProcessor = async (
   title: string
 ): Promise<AudioProcessor> => {
   // Initialize the audio context right away
-  const ctx = getAudioContext();
+  let ctx = getAudioContext();
   await resumeAudioContext();
   
   // Create audio element for streaming
-  const audioElement = new Audio();
+  let audioElement = new Audio();
   audioElement.crossOrigin = 'anonymous';
   audioElement.src = audioUrl;
   audioElement.preload = 'auto';
@@ -85,9 +85,8 @@ export const createAudioProcessor = async (
       };
       
       console.error('Error loading audio:', errorDetails, 'for file:', title);
-      
-      // Still resolve to avoid blocking, but log the error
-      resolve();
+      // Reject instead of just logging
+      reject(new Error(`Error loading audio: ${errorDetails.message || 'Unknown error'}`));
     };
     
     // Add canplay event which is more reliable than loadedmetadata
@@ -105,9 +104,8 @@ export const createAudioProcessor = async (
     // Set a timeout in case the audio doesn't load
     const timeout = setTimeout(() => {
       console.warn('Audio load timeout for:', title);
-      // Even if we timeout, we should still try to continue
-      // This allows for progressive loading of large files
-      resolve();
+      // Reject on timeout
+      reject(new Error(`Audio load timeout for: ${title}`));
     }, 30000); // Increased timeout to 30 seconds for large files like Duke Ellington jazz recordings
     
     // Also check for progress to handle large files
@@ -155,6 +153,13 @@ export const createAudioProcessor = async (
     try {
       // Get or create the MediaElementSource
       source = getMediaElementSource(audioElement);
+      if (!ctx) {
+        ctx = getAudioContext();
+        if (!ctx) {
+          throw new Error('Audio context is not initialized');
+        }
+      }
+      const now = ctx!.currentTime;
       gainNode = ctx.createGain();
       
       // Check if StereoPannerNode is supported
@@ -194,19 +199,9 @@ export const createAudioProcessor = async (
       audioNodesInitialized = true;
       if (DEBUG_AUDIO) console.log('Audio nodes initialized successfully');
     } catch (err) {
+      // Propagate error instead of only logging
       console.error('Failed to initialize audio nodes:', err);
-      // If initialization fails, we need to reconnect the audio element
-      // to allow normal playback even without effects
-      try {
-        // Disconnect any existing connections
-        source?.disconnect();
-        // Create a fallback direct connection
-        audioElement.onplay = () => {
-          console.log('Using fallback audio playback');
-        };
-      } catch (fallbackErr) {
-        console.error('Even fallback audio setup failed:', fallbackErr);
-      }
+      throw err;
     }
   };
   
@@ -257,70 +252,22 @@ export const createAudioProcessor = async (
         
         // Test panner after successful playback
         if (pannerNode) {
-          // Perform a quick ping-pong to ensure the panner is working
-          const now = ctx.currentTime;
+          if (!ctx) {
+            ctx = getAudioContext();
+            if (!ctx) {
+              throw new Error('Audio context is not initialized');
+            }
+          }
+          const now = ctx!.currentTime;
           pannerNode.pan.setValueAtTime(-0.5, now);
           pannerNode.pan.setValueAtTime(0.5, now + 0.1);
           pannerNode.pan.setValueAtTime(0, now + 0.2);
           console.log('Ping-pong panner test performed');
         }
       } catch (e) {
+        // Propagate error instead of only logging
         console.error('Error playing audio:', e);
-        
-        // Fallback approach - create a duplicate player
-        try {
-          console.log('Trying fallback with new Audio element');
-          
-          // Create a fresh Audio element
-          const fallbackPlayer = new Audio(audioUrl);
-          fallbackPlayer.volume = 0.5;
-          fallbackPlayer.loop = true;
-          
-          // Try to play with this new element
-          await fallbackPlayer.play();
-          
-          // If successful, replace our current element
-          audioElement = fallbackPlayer;
-          isCurrentlyPlaying = true;
-          
-          console.log('Fallback audio player succeeded');
-          
-          // Create a new audio context and connect the fallback player
-          // This gives us a fresh chance to establish the panner
-          const fallbackCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-          try {
-            await fallbackCtx.resume();
-            
-            // Create new audio nodes for the fallback
-            const fallbackSource = fallbackCtx.createMediaElementSource(fallbackPlayer);
-            const fallbackGain = fallbackCtx.createGain();
-            const fallbackPanner = fallbackCtx.createStereoPanner();
-            
-            // Connect nodes
-            fallbackSource.connect(fallbackPanner);
-            fallbackPanner.connect(fallbackGain);
-            fallbackGain.connect(fallbackCtx.destination);
-            
-            // Update our references to use the new nodes
-            source = fallbackSource;
-            gainNode = fallbackGain;
-            pannerNode = fallbackPanner;
-            ctx = fallbackCtx;
-            
-            // Initialize with a ping-pong test
-            fallbackPanner.pan.setValueAtTime(-0.5, fallbackCtx.currentTime);
-            fallbackPanner.pan.setValueAtTime(0.5, fallbackCtx.currentTime + 0.1);
-            fallbackPanner.pan.setValueAtTime(0, fallbackCtx.currentTime + 0.2);
-            
-            audioNodesInitialized = true;
-            console.log('Fallback audio nodes successfully created');
-          } catch (nodeErr) {
-            console.error('Could not create fallback audio nodes:', nodeErr);
-          }
-        } catch (fallbackErr) {
-          console.error('Even fallback playback failed:', fallbackErr);
-          throw e;
-        }
+        throw e;
       }
     },
     pause: () => {
@@ -348,7 +295,7 @@ export const createAudioProcessor = async (
         
         // Use the automation API for smoother transitions
         // and to ensure the value actually gets applied
-        const now = ctx.currentTime;
+        const now = ctx!.currentTime;
         
         // Apply with a slight ramp for smoother transition 
         // (higher values = more noticeable change)
@@ -407,4 +354,4 @@ export const createAudioProcessor = async (
       endedCallback = callback;
     }
   };
-}; 
+};

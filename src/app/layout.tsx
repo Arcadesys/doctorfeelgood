@@ -2,6 +2,7 @@
 
 import { Inter } from "next/font/google";
 import "./globals.css";
+import { AudioEngineProvider } from '@/lib/AudioEngineContext';
 
 const inter = Inter({
   variable: "--font-inter",
@@ -21,7 +22,9 @@ export default function RootLayout({
         className="antialiased"
         style={{ overscrollBehaviorX: "auto" }}
       >
-        {children}
+        <AudioEngineProvider>
+          {children}
+        </AudioEngineProvider>
       </body>
     </html>
   );

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { AudioEngine } from '@/lib/audioEngine';
+import { useAudioEngine } from '@/lib/AudioEngineContext';
 import { 
   AudioMode, 
   ContactSoundConfig, 
@@ -79,7 +79,7 @@ export default function EMDRProcessor() {
 
   // Refs
   const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const audioEngineRef = useRef<AudioEngine | null>(null);
+  const audioEngineRef = useRef<typeof audioEngine | null>(null);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animationRef = useRef<number | null>(null);
@@ -180,6 +180,8 @@ export default function EMDRProcessor() {
     let initializationAttempted = false;
     let initializationInProgress = false;
 
+    const audioEngine = useAudioEngine();
+
     const init = async () => {
       if (initializationAttempted || initializationInProgress) return;
       initializationInProgress = true;
@@ -192,21 +194,13 @@ export default function EMDRProcessor() {
       }
 
       try {
-        // Create and initialize the audio engine
-        const audioEngine = new AudioEngine();
-        console.log('Created new AudioEngine instance');
-
-        // Initialize with our audio element
+        // Use singleton audio engine from context
         await audioEngine.initialize(audioPlayerRef.current);
         if (!mounted) return;
 
         console.log('AudioEngine initialized successfully');
-        
-        // Set initial configurations
         audioEngine.updateContactSoundConfig(contactSoundConfig);
         audioEngine.setAudioMode(audioMode);
-        
-        // Store in ref
         audioEngineRef.current = audioEngine;
         
         // Set initial audio source and ensure it's loaded
@@ -952,13 +946,11 @@ export default function EMDRProcessor() {
         }
         
         console.log('Initializing AudioEngine on demand');
-        const audioEngine = new AudioEngine();
+        // Use singleton audio engine from context
         await audioEngine.initialize(audioPlayerRef.current);
         audioEngineRef.current = audioEngine;
-        
-        // Set initial configurations
-        audioEngine.updateContactSoundConfig(contactSoundConfig);
-        audioEngine.setAudioMode(audioMode);
+        audioEngineRef.current.updateContactSoundConfig(contactSoundConfig);
+        audioEngineRef.current.setAudioMode(audioMode);
       }
 
       // Ensure audio context is running

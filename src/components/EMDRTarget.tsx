@@ -55,6 +55,7 @@ export const EMDRTarget: React.FC<EMDRTargetProps> = ({
     if (!isActive || !canvasRef.current) {
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = undefined;
       }
       return;
     }
@@ -87,6 +88,7 @@ export const EMDRTarget: React.FC<EMDRTargetProps> = ({
     return () => {
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = undefined;
       }
       startTimeRef.current = undefined;
     };
@@ -191,4 +193,4 @@ export const EMDRTarget: React.FC<EMDRTargetProps> = ({
   );
 };
 
-export default EMDRTarget; 
+export default EMDRTarget;

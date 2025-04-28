@@ -776,52 +776,70 @@ export default function EMDRProcessor() {
     loadAudio();
   }, [audioMode, selectedAudio]);
 
+  // Add a type-safe enum for settings
+  const enum SettingKey {
+    VisualIntensity = 'visualIntensity',
+    TargetShape = 'targetShape',
+    IsDarkMode = 'isDarkMode',
+    AudioMode = 'audioMode',
+    Bpm = 'bpm',
+    AudioFeedbackEnabled = 'audioFeedbackEnabled',
+    VisualGuideEnabled = 'visualGuideEnabled',
+    MovementGuideEnabled = 'movementGuideEnabled',
+    TargetHasGlow = 'targetHasGlow',
+    TargetColor = 'targetColor',
+    SessionDuration = 'sessionDuration',
+  }
+
   // Handle setting changes
   const handleSettingChange = async (setting: string, value: unknown): Promise<void> => {
     switch (setting) {
-      case 'visualIntensity':
+      case SettingKey.VisualIntensity:
         if (typeof value === 'number') {
-          setVisualIntensity(clampDecimalIntensity(percentageToDecimal(value)));
+          setVisualIntensity(prev => clampDecimalIntensity(percentageToDecimal(value)));
         }
         break;
-      case 'targetShape':
-        setTargetShape(value as 'circle' | 'square' | 'triangle' | 'diamond' | 'star');
+      case SettingKey.TargetShape:
+        if (typeof value === 'string' && ['circle','square','triangle','diamond','star'].includes(value)) {
+          setTargetShape(value as typeof targetShape);
+        }
         break;
-      case 'isDarkMode':
-        setIsDarkMode(value as boolean);
+      case SettingKey.IsDarkMode:
+        if (typeof value === 'boolean') setIsDarkMode(value);
         break;
-      case 'audioMode':
+      case SettingKey.AudioMode:
         if (typeof value === 'string' && (value === 'click' || value === 'track')) {
           await handleAudioModeChange(value as AudioMode);
         }
         break;
-      case 'bpm':
-        handleBpmChange(value as number);
+      case SettingKey.Bpm:
+        if (typeof value === 'number') handleBpmChange(value);
         break;
-      case 'audioFeedbackEnabled':
-        setAudioFeedbackEnabled(value as boolean);
+      case SettingKey.AudioFeedbackEnabled:
+        if (typeof value === 'boolean') setAudioFeedbackEnabled(value);
         break;
-      case 'visualGuideEnabled':
-        setVisualGuideEnabled(value as boolean);
+      case SettingKey.VisualGuideEnabled:
+        if (typeof value === 'boolean') setVisualGuideEnabled(value);
         break;
-      case 'movementGuideEnabled':
-        setMovementGuideEnabled(value as boolean);
+      case SettingKey.MovementGuideEnabled:
+        if (typeof value === 'boolean') setMovementGuideEnabled(value);
         break;
-      case 'targetHasGlow':
-        setTargetHasGlow(value as boolean);
+      case SettingKey.TargetHasGlow:
+        if (typeof value === 'boolean') setTargetHasGlow(value);
         break;
-      case 'targetColor':
-        setTargetColor(value as string);
+      case SettingKey.TargetColor:
+        if (typeof value === 'string') setTargetColor(value);
         break;
-      case 'sessionDuration':
-        // Update the session duration in the audio track config
-        setAudioTrackConfig(prev => ({
-          ...prev,
-          sessionDuration: value as number
-        }));
+      case SettingKey.SessionDuration:
+        if (typeof value === 'number') {
+          setAudioTrackConfig(prev => ({
+            ...prev,
+            sessionDuration: value
+          }));
+        }
         break;
       default:
-        console.log(`Setting ${setting} changed to ${value}`);
+        console.warn(`Unknown setting key: ${setting}`);
     }
   };
 

@@ -202,7 +202,13 @@ export class AudioEngine {
         console.warn('No sound buffer available');
         return;
       }
-      
+      // Debug log for click sound
+      console.log('Playing contact sound:', {
+        side: isRightSide ? 'right' : 'left',
+        volume: this.contactSoundConfig.volume,
+        bufferDuration: buffer.duration,
+        contextState: this.audioContext!.state
+      });
       // After ensureInitialized(), we know audioContext is not null
       const source = this.audioContext!.createBufferSource();
       source.buffer = buffer;
@@ -436,4 +442,4 @@ export class AudioEngine {
   public getContext(): AudioContext | null {
     return audioContextManager.getContext();
   }
-} 
+}

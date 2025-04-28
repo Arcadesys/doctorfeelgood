@@ -55,6 +55,8 @@ interface SettingChangeHandler {
 }
 
 export default function EMDRProcessor() {
+  const audioEngine = useAudioEngine(); // <-- Moved to top-level, before any hooks
+
   // State variables
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -179,8 +181,6 @@ export default function EMDRProcessor() {
     let mounted = true;
     let initializationAttempted = false;
     let initializationInProgress = false;
-
-    const audioEngine = useAudioEngine();
 
     const init = async () => {
       if (initializationAttempted || initializationInProgress) return;

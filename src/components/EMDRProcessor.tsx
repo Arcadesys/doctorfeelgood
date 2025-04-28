@@ -4,7 +4,8 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   AudioEngine, 
   AudioMode,
-  ContactSoundConfig
+  ContactSoundConfig,
+  AudioTrackConfig
 } from '../lib/audioEngine';
 import UnifiedSettings from './UnifiedSettings';
 import VisualTarget from './VisualTarget';
@@ -13,15 +14,10 @@ import { getAudioContext, getMediaElementSource, resumeAudioContext } from '../u
 import { decimalToPercentage, percentageToDecimal, clampDecimalIntensity } from '@/utils/intensityUtils';
 import { formatTime } from '@/utils/timeUtils';
 import { audioContextManager } from '@/utils/audioContextManager';
-
-// Simple version without the File System Access API
-type AudioFile = {
-  id: string;
-  name: string;
-  lastUsed: string;
-  path?: string;
-  objectUrl?: string;
-};
+import { 
+  AudioFile, 
+  AudioMetadata
+} from '@/types/audio';
 
 // Audio context interfaces
 interface AudioContextState {
@@ -38,17 +34,20 @@ interface EMDRTrackConfig {
   volume: number;
 }
 
-// Add AudioMetadata type at the top of the file
-interface AudioMetadata {
-  duration: number;
-  sampleRate: number;
-}
-
 // Remove empty interface and unused WebkitAudioContext
 declare global {
   interface Window {
     webkitAudioContext: typeof AudioContext;
   }
+}
+
+// Update the VisualTarget component props
+interface VisualTargetProps {
+  isActive: boolean;
+  visualIntensity: number;
+  targetShape: 'square' | 'triangle' | 'circle' | 'diamond' | 'star';
+  targetColor: string;
+  targetHasGlow: boolean;
 }
 
 export default function EMDRProcessor() {
@@ -1172,17 +1171,18 @@ export default function EMDRProcessor() {
             hasGlow={targetHasGlow}
             movementPattern="ping-pong"
             intensity={1}
-            visualIntensity={Math.round(visualIntensity * 100)} // Convert decimal to percentage
+            visualIntensity={visualIntensity}
           />
         ) : (
           <VisualTarget
+            x={0}
+            y={0}
+            size={50}
+            color={targetColor}
+            shape={targetShape}
             isActive={false}
-            settings={{
-              visualIntensity: Math.round(visualIntensity * 100), // Convert decimal to percentage
-              targetShape,
-              targetColor,
-              targetHasGlow, // Pass the glow setting to VisualTarget
-            }}
+            isGlowing={targetHasGlow}
+            onTargetClick={() => {}}
           />
         )}
       </div>

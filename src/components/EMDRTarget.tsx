@@ -11,7 +11,7 @@ interface EMDRTargetProps {
   movementPattern?: 'ping-pong' | 'sine';
   pingPong?: boolean;
   intensity?: number; // 0 to 1 for opacity
-  visualIntensity?: number; // 0 to 100 for visual intensity
+  visualIntensity?: number; // 0 to 1 for visual intensity
 }
 
 export const EMDRTarget: React.FC<EMDRTargetProps> = ({
@@ -23,7 +23,7 @@ export const EMDRTarget: React.FC<EMDRTargetProps> = ({
   hasGlow = true,
   movementPattern = 'ping-pong',
   intensity = 1,
-  visualIntensity = 100,
+  visualIntensity = 1,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -114,7 +114,8 @@ export const EMDRTarget: React.FC<EMDRTargetProps> = ({
         [r, g, b] = color.match(/\d+/g)?.map(Number) || [255, 255, 255];
       }
       
-      const opacity = visualIntensity / 100;
+      // Use visualIntensity directly as it's already in 0-1 range
+      const opacity = visualIntensity;
       ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${opacity})`;
       ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${opacity})`;
 

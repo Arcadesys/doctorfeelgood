@@ -1,3 +1,5 @@
+import { AudioFile, AudioMetadata } from '@/types/audio';
+
 interface AudioSettingsProps {
   audioMode: 'bilateral' | 'binaural';
   onAudioModeChange: (mode: 'bilateral' | 'binaural') => void;

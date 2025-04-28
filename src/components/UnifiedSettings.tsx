@@ -1,5 +1,6 @@
 import React from 'react';
 import { Drawer, DrawerOverlay, DrawerContent, DrawerCloseButton, DrawerHeader, DrawerBody, VStack, Box, Heading, FormControl, FormLabel, Select, Slider, SliderTrack, SliderThumb, SliderFilledTrack, useColorMode, Switch } from '@chakra-ui/react';
+import { AudioMetadata } from '@/types/audio';
 
 // Format time in seconds to MM:SS format
 const formatTime = (seconds: number): string => {

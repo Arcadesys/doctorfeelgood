@@ -2,21 +2,7 @@
 
 import { getAudioContext, getMediaElementSource, resumeAudioContext } from '../utils/audioUtils';
 import { audioContextManager } from '@/utils/audioContextManager';
-
-export type AudioMode = 'click' | 'track';
-
-export interface ContactSoundConfig {
-  leftSamplePath: string;
-  rightSamplePath: string;
-  volume: number;
-  enabled: boolean;
-}
-
-export interface AudioTrackConfig {
-  volume: number;
-  loop: boolean;
-  filePath: string;
-}
+import { AudioMode, ContactSoundConfig, AudioTrackConfig } from '@/types/audio';
 
 interface InitializedAudioEngine {
   isInitialized: true;

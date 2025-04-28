@@ -1,6 +1,6 @@
 'use client';
 
-import { EMDRProcessor } from '@/components/EMDRProcessor';
+import EMDRProcessor from '@/components/EMDRProcessor';
 import EMDRSession from '@/components/EMDRSession';
 
 export default function TestBothPage() {

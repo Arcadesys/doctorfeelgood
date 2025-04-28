@@ -1108,10 +1108,11 @@ export default function EMDRProcessor() {
           bpm={bpm}
           onBpmChange={handleBpmChange}
           onAudioSelect={(audio) => {
-            // Handle audio selection
+            setSelectedAudio(audio);
           }}
           selectedAudio={selectedAudio?.name || ''}
           audioMetadata={audioMetadata}
+          audioFiles={audioFiles}
         />
 
         {/* Controls - z-20 to be above canvas */}

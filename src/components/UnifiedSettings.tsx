@@ -1,6 +1,6 @@
 import React from 'react';
 import { Drawer, DrawerOverlay, DrawerContent, DrawerCloseButton, DrawerHeader, DrawerBody, VStack, Box, Heading, FormControl, FormLabel, Select, Slider, SliderTrack, SliderThumb, SliderFilledTrack, useColorMode, Switch } from '@chakra-ui/react';
-import { AudioMetadata } from '@/types/audio';
+import { AudioMetadata, AudioFile } from '@/types/audio';
 
 // Format time in seconds to MM:SS format
 const formatTime = (seconds: number): string => {
@@ -32,9 +32,10 @@ interface UnifiedSettingsProps {
   onAudioModeChange: (mode: 'click' | 'track') => void;
   bpm: number;
   onBpmChange: (bpm: number) => void;
-  onAudioSelect: (audio: string) => void;
+  onAudioSelect: (audio: AudioFile | null) => void;
   selectedAudio: string;
   audioMetadata: AudioMetadata | null;
+  audioFiles: AudioFile[];
 }
 
 const UnifiedSettings: React.FC<UnifiedSettingsProps> = ({
@@ -50,7 +51,8 @@ const UnifiedSettings: React.FC<UnifiedSettingsProps> = ({
   onBpmChange,
   onAudioSelect,
   selectedAudio,
-  audioMetadata
+  audioMetadata,
+  audioFiles,
 }) => {
   const { colorMode, toggleColorMode } = useColorMode();
 

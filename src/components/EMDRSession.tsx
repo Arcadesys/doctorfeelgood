@@ -6,6 +6,7 @@ import SessionTimer from './SessionTimer';
 import UnifiedSettings from './UnifiedSettings';
 import { useAudioSynthesis } from '../hooks/useAudioSynthesis';
 import { playGuideTone } from '../utils/soundUtils';
+import { AudioTrackConfig, AudioFile, AudioMetadata } from '@/types/audio';
 
 interface EMDRSessionProps {
   defaultSpeed?: number; // milliseconds for one complete cycle
@@ -38,14 +39,20 @@ const EMDRSession: React.FC<EMDRSessionProps> = ({
   const [bpm, setBpm] = useState(60);
   const [audioTrackConfig, setAudioTrackConfig] = useState<AudioTrackConfig>({
     volume: 0.5,
-    pan: 0,
-    muted: false,
+    loop: true,
+    filePath: '/audio/sine-440hz.mp3',
+    bpm: 60,
+    sessionDuration: 60
   });
   
   // UI state
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   
   const { isPlaying, stopTone, playPingPongEffect, playPanningOscillator } = useAudioSynthesis();
+
+  const [selectedAudio, setSelectedAudio] = useState<string>('');
+  const [audioFiles, setAudioFiles] = useState<AudioFile[]>([]);
+  const [audioMetadata, setAudioMetadata] = useState<AudioMetadata | null>(null);
 
   const startSession = useCallback(async () => {
     // Close settings drawer if open
@@ -114,47 +121,84 @@ const EMDRSession: React.FC<EMDRSessionProps> = ({
   }, [isActive, stopSession]);
   
   // Handle setting changes
-  const handleSettingChange = useCallback((settingName: string, value: number | string | boolean) => {
+  const handleSettingChange = useCallback((settingName: string, value: unknown) => {
     switch (settingName) {
       case 'speed':
-        setSpeed(value as number);
+        if (typeof value === 'number') setSpeed(value);
         break;
       case 'freqLeft':
-        setFreqLeft(value as number);
+        if (typeof value === 'number') setFreqLeft(value);
         break;
       case 'freqRight':
-        setFreqRight(value as number);
+        if (typeof value === 'number') setFreqRight(value);
         break;
       case 'oscillatorType':
-        setOscillatorType(value as 'sine' | 'square' | 'triangle' | 'sawtooth');
+        if (typeof value === 'string' && ['sine', 'square', 'triangle', 'sawtooth'].includes(value)) {
+          setOscillatorType(value as 'sine' | 'square' | 'triangle' | 'sawtooth');
+        }
         break;
       case 'targetSize':
-        setTargetSize(value as number);
+        if (typeof value === 'number') setTargetSize(value);
         break;
       case 'visualIntensity':
-        setVisualIntensity(value as number);
+        if (typeof value === 'number') setVisualIntensity(value);
         break;
       case 'targetColor':
-        setTargetColor(value as string);
+        if (typeof value === 'string') setTargetColor(value);
         break;
       case 'targetShape':
-        setTargetShape(value as 'circle' | 'square' | 'triangle' | 'diamond' | 'star');
+        if (typeof value === 'string' && ['circle', 'square', 'triangle', 'diamond', 'star'].includes(value)) {
+          setTargetShape(value as 'circle' | 'square' | 'triangle' | 'diamond' | 'star');
+        }
         break;
       case 'targetHasGlow':
-        setTargetHasGlow(value as boolean);
+        if (typeof value === 'boolean') setTargetHasGlow(value);
         break;
       case 'targetMovementPattern':
-        setTargetMovementPattern(value as 'ping-pong' | 'sine');
+        if (typeof value === 'string' && ['ping-pong', 'sine'].includes(value)) {
+          setTargetMovementPattern(value as 'ping-pong' | 'sine');
+        }
         break;
       case 'sessionDuration':
-        setSessionDuration(value as number);
+        if (typeof value === 'number') setSessionDuration(value);
         break;
       case 'isDarkMode':
-        setIsDarkMode(value as boolean);
+        if (typeof value === 'boolean') setIsDarkMode(value);
         break;
       case 'audioMode':
-        setAudioMode(value as 'click' | 'track');
+        if (typeof value === 'string' && ['click', 'track'].includes(value)) {
+          setAudioMode(value as 'click' | 'track');
+        }
         break;
+    }
+  }, []);
+
+  // Handle audio mode change
+  const handleAudioModeChange = useCallback((mode: 'click' | 'track') => {
+    setAudioMode(mode);
+  }, []);
+
+  // Handle BPM change
+  const handleBpmChange = useCallback((newBpm: number) => {
+    setBpm(newBpm);
+    setSpeed(Math.round(60000 / newBpm)); // Convert BPM to milliseconds
+  }, []);
+
+  // Handle audio selection
+  const handleAudioSelect = useCallback((audio: AudioFile | null) => {
+    if (audio) {
+      setSelectedAudio(audio.id);
+      setAudioTrackConfig(prev => ({
+        ...prev,
+        filePath: audio.path || audio.objectUrl || '/audio/sine-440hz.mp3',
+        bpm: prev.bpm
+      }));
+    } else {
+      setSelectedAudio('');
+      setAudioTrackConfig(prev => ({
+        ...prev,
+        filePath: '/audio/sine-440hz.mp3'
+      }));
     }
   }, []);
 
@@ -175,90 +219,31 @@ const EMDRSession: React.FC<EMDRSessionProps> = ({
     audioMode,
     bpm: Math.round(60000 / speed), // Convert speed to BPM
     panWidthPercent: 80, // Default pan width
+    audioFeedbackEnabled: true,
+    visualGuideEnabled: true,
+    movementGuideEnabled: true,
+    audioVolume: 0.5,
+    visualGuideColor: '#ffffff',
+    movementGuideColor: '#ffffff'
   };
 
   return (
     <div className={`min-h-screen ${isDarkMode ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'}`}>
       <div className="p-6 max-w-5xl mx-auto">
-        <div className="flex justify-between items-center mb-6">
-          <button
-            onClick={() => setIsSettingsOpen(true)}
-            className={`p-2 rounded-lg transition-colors ${
-              isDarkMode 
-                ? 'hover:bg-gray-800 text-gray-300' 
-                : 'hover:bg-gray-100 text-gray-700'
-            }`}
-            aria-label="Open settings menu"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-          </button>
-          
-          <h1 className="text-2xl font-bold">EMDR Therapy Session</h1>
-          
-          {/* Empty div to maintain flex spacing */}
-          <div className="w-8"></div>
-        </div>
-        
-        <div className={`
-          relative 
-          flex 
-          flex-col 
-          items-center 
-          justify-center 
-          space-y-8
-          ${isDarkMode ? 'bg-gray-800' : 'bg-gray-100'} 
-          p-8 
-          rounded-xl
-          shadow-lg
-        `}>
-          <EMDRTarget
-            isActive={isActive}
-            speed={speed}
-            size={targetSize}
-            intensity={visualIntensity}
-            color={targetColor}
-            shape={targetShape}
-            hasGlow={targetHasGlow}
-            movementPattern={targetMovementPattern}
-            isDarkMode={isDarkMode}
-          />
-          
-          <SessionTimer
-            isActive={isActive}
-            duration={sessionDuration}
-            onComplete={handleTimerComplete}
-            isDarkMode={isDarkMode}
-          />
-          
-          <div className="flex space-x-4">
-            <button
-              onClick={isActive ? stopSession : startSession}
-              className={`
-                px-6 
-                py-3 
-                rounded-lg 
-                font-semibold 
-                transition-colors
-                ${isActive
-                  ? 'bg-red-600 hover:bg-red-700 text-white'
-                  : 'bg-green-600 hover:bg-green-700 text-white'
-                }
-              `}
-              aria-label={isActive ? 'Stop session' : 'Start session'}
-            >
-              {isActive ? 'Stop' : 'Start'}
-            </button>
-          </div>
-        </div>
-
         <UnifiedSettings
           isOpen={isSettingsOpen}
           onClose={() => setIsSettingsOpen(false)}
+          isSessionActive={isActive}
           settings={currentSettings}
           onSettingChange={handleSettingChange}
-          isDarkMode={isDarkMode}
+          audioMode={audioMode}
+          onAudioModeChange={handleAudioModeChange}
+          bpm={bpm}
+          onBpmChange={handleBpmChange}
+          onAudioSelect={handleAudioSelect}
+          selectedAudio={selectedAudio}
+          audioMetadata={audioMetadata}
+          audioFiles={audioFiles}
         />
       </div>
     </div>

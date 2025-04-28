@@ -1,51 +1,66 @@
 import React, { useState, useEffect } from 'react';
 
 interface SessionTimerProps {
-  isRunning?: boolean;
-  reset?: boolean;
+  isActive: boolean;
+  duration: number;
+  onComplete: () => void;
+  isDarkMode?: boolean;
 }
 
 const SessionTimer: React.FC<SessionTimerProps> = ({ 
-  isRunning = false,
-  reset = false
+  isActive,
+  duration,
+  onComplete,
+  isDarkMode = false
 }) => {
-  const [seconds, setSeconds] = useState(0);
+  const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
 
   useEffect(() => {
-    let interval: NodeJS.Timeout | null = null;
+    if (isActive && timeRemaining === null) {
+      setTimeRemaining(duration);
+    }
 
-    if (isRunning) {
-      interval = setInterval(() => {
-        setSeconds(prev => prev + 1);
+    if (timeRemaining !== null && timeRemaining > 0 && isActive) {
+      const timer = setInterval(() => {
+        setTimeRemaining(prev => {
+          if (prev && prev > 0) {
+            return prev - 1;
+          }
+          return 0;
+        });
       }, 1000);
+
+      return () => clearInterval(timer);
     }
 
-    return () => {
-      if (interval) {
-        clearInterval(interval);
-      }
-    };
-  }, [isRunning]);
+    if (timeRemaining === 0) {
+      onComplete();
+    }
+  }, [isActive, duration, timeRemaining, onComplete]);
 
   useEffect(() => {
-    if (reset) {
-      setSeconds(0);
+    if (!isActive) {
+      setTimeRemaining(null);
     }
-  }, [reset]);
+  }, [isActive]);
 
-  const formatTime = (totalSeconds: number): string => {
-    const minutes = Math.floor(totalSeconds / 60);
-    const remainingSeconds = totalSeconds % 60;
+  const formatTime = (seconds: number): string => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
     return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
+
+  if (!isActive || timeRemaining === null) {
+    return null;
+  }
 
   return (
     <div 
       role="timer" 
       aria-label="Session duration"
-      className="text-2xl font-mono"
+      className={`text-2xl font-mono ${isDarkMode ? 'text-white' : 'text-gray-900'}`}
     >
-      {formatTime(seconds)}
+      {formatTime(timeRemaining)}
     </div>
   );
 };

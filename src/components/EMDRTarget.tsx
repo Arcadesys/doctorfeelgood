@@ -12,6 +12,7 @@ interface EMDRTargetProps {
   pingPong?: boolean;
   intensity?: number; // 0 to 1 for opacity
   visualIntensity?: number; // 0 to 1 for visual intensity
+  isDarkMode?: boolean; // Whether dark mode is enabled
 }
 
 export const EMDRTarget: React.FC<EMDRTargetProps> = ({
@@ -24,6 +25,7 @@ export const EMDRTarget: React.FC<EMDRTargetProps> = ({
   movementPattern = 'ping-pong',
   intensity = 1,
   visualIntensity = 1,
+  isDarkMode = false,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [position, setPosition] = useState({ x: 0, y: 0 });

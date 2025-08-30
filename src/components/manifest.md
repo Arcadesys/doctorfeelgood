@@ -23,17 +23,17 @@ Provide a **tight‑scoped MVP** that lets a clinician run configurable EMDR set
   - [ ] Built‑in click track (generated Web Audio buffer)
   - [ ] Upload WAV/MP3/M4A; loop & sync to sets
   - [ ] Real‑time L↔R panning mirroring target position
+  - [ ] Allow configurable tone 
 - **Session Controls**
   - [ ] Duration picker → 15‑sec steps (15 sec – 5 min)
   - [ ] Play/Pause/Reset buttons
   - [ ] Remaining‑time display (mm:ss)
-- **Config Persist**
-  - [ ] Auto‑save last used settings to localStorage / file
+- **Persistence**
+  - [ ] Data about client sessions is persisted in supabase. Allow no HIPPA data to be saved; this should only hold configs for this.
 
 ---
 ## 4. Non‑Goals (v1)
 - Mobile app builds
-- Cloud sync or client data storage
 - Clinician note‑taking
 
 ---

@@ -5,21 +5,25 @@ import { AppConfig } from '../types';
 type Props = {
   playing: boolean;
   remainingSec: number;
-  onPlayPause: () => void;
+  onPlay: () => void;
+  onStop: () => void;
   onReset: () => void;
   config: AppConfig;
   onConfigChange: (c: AppConfig) => void;
 };
 
-export default function Controls({ playing, remainingSec, onPlayPause, onReset, config, onConfigChange }: Props) {
+export default function Controls({ playing, remainingSec, onPlay, onStop, onReset, config, onConfigChange }: Props) {
   const time = `${Math.floor(remainingSec / 60)}:${String(remainingSec % 60).padStart(2, '0')}`;
 
   return (
     <div className="controls" role="region" aria-label="Session controls">
       <div className="row" style={{ justifyContent: 'space-between' }}>
         <div className="row" role="group" aria-label="Transport">
-          <button className="btn primary" onClick={onPlayPause} aria-pressed={playing} aria-label={playing ? 'Pause' : 'Play'}>
-            {playing ? 'Pause' : 'Play'}
+          <button className="btn primary" onClick={onPlay} aria-label="Play" disabled={playing}>
+            Play
+          </button>
+          <button className="btn" onClick={onStop} aria-label="Stop" disabled={!playing}>
+            Stop
           </button>
           <button className="btn" onClick={onReset} aria-label="Reset session">Reset</button>
         </div>

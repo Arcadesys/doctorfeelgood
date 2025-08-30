@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { advancePosition, MotionState } from '../lib/motion';
 
 type Props = {
   color: string;
@@ -66,24 +67,16 @@ export default function Target({ color, sizePx, speedPxPerSec, edgePaddingPx, ed
       if (!lastTsRef.current) lastTsRef.current = ts;
       const dt = (ts - lastTsRef.current) / 1000;
       lastTsRef.current = ts;
-      // edge pause handling
-      if (ts < pausedUntilRef.current) {
-        rafRef.current = requestAnimationFrame(step);
-        return;
-      }
-      // advance
-      posRef.current += dir * speedPxPerSec * dt;
-      if (posRef.current <= minX) {
-        posRef.current = minX;
-        if (dir === -1) onEdge?.('left');
-        setDir(1);
-        if (edgePauseMs > 0) pausedUntilRef.current = ts + edgePauseMs;
-      } else if (posRef.current >= maxX) {
-        posRef.current = maxX;
-        if (dir === 1) onEdge?.('right');
-        setDir(-1 as -1);
-        if (edgePauseMs > 0) pausedUntilRef.current = ts + edgePauseMs;
-      }
+      const next = advancePosition(
+        { x: posRef.current, dir, pausedUntilMs: pausedUntilRef.current } as MotionState,
+        { minX, maxX, speedPxPerSec, edgePauseMs },
+        dt,
+        ts,
+      );
+      posRef.current = next.x;
+      if (next.dir !== dir) setDir(next.dir);
+      pausedUntilRef.current = next.pausedUntilMs;
+      if (next.hitEdge) onEdge?.(next.hitEdge);
       const norm = range > 0 ? (posRef.current - minX) / range : 0.5;
       onPosition?.(norm);
       if (dotRef.current) dotRef.current.style.transform = `translateX(${posRef.current}px)`;

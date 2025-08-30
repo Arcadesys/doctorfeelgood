@@ -41,6 +41,11 @@ export default function App() {
 
   const audio = useAudioEngine(true, config.audio.volume);
 
+  // Ensure audio engine suspends when not playing
+  useEffect(() => {
+    if (!playing) audio.stop();
+  }, [playing, audio]);
+
   useEffect(() => {
     let raf: number | null = null;
     let anchor = performance.now();
@@ -84,7 +89,8 @@ export default function App() {
       <Controls
         playing={playing}
         remainingSec={remainingRounded}
-        onPlayPause={() => setPlaying((p) => !p)}
+        onPlay={() => setPlaying(true)}
+        onStop={() => setPlaying(false)}
         onReset={() => { setPlaying(false); setRemaining(config.durationSec); }}
         config={config}
         onConfigChange={setConfig}

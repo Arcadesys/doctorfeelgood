@@ -8,7 +8,7 @@ interface AudioEngineAPI {
   click: () => void; // short audible click
 }
 
-export function useAudioEngine(enabled: boolean, volume: number): AudioEngineAPI {
+export function useAudioEngine(enabled: boolean, volume: number, waveform: OscillatorType = 'square'): AudioEngineAPI {
   const ctxRef = useRef<AudioContext | null>(null);
   const gainRef = useRef<GainNode | null>(null);
   const panRef = useRef<StereoPannerNode | null>(null);
@@ -59,7 +59,8 @@ export function useAudioEngine(enabled: boolean, volume: number): AudioEngineAPI
         if (!ctx || !pan || !gain) return;
         const osc = ctx.createOscillator();
         const oscGain = ctx.createGain();
-        osc.type = 'square';
+        // Shape of the click transient
+        osc.type = waveform;
         osc.frequency.value = 950; // short tick
         oscGain.gain.value = 0.5;
         osc.connect(oscGain);
@@ -70,6 +71,5 @@ export function useAudioEngine(enabled: boolean, volume: number): AudioEngineAPI
       },
     };
     return api;
-  }, [enabled, volume]);
+  }, [enabled, volume, waveform]);
 }
-

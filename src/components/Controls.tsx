@@ -103,19 +103,57 @@ export default function Controls({ playing, remainingSec, onPlay, onStop, onRese
         </label>
 
         <label className="row" style={{ gap: 8 }}>
+          <span className="label">Shape</span>
+          <select
+            className="select"
+            value={config.target.shape ?? 'circle'}
+            onChange={(e) => onConfigChange({
+              ...config,
+              target: { ...config.target, shape: e.target.value as any },
+            })}
+          >
+            <option value="circle">Circle</option>
+            <option value="square">Square</option>
+            <option value="diamond">Diamond</option>
+            <option value="smiley">Smiley Face</option>
+            <option value="triangle">Triangle</option>
+            <option value="star">Star</option>
+            <option value="hexagon">Hexagon</option>
+            <option value="ring">Ring</option>
+            <option value="bullseye">Bullseye</option>
+            <option value="cross">Cross</option>
+            <option value="heart">Heart</option>
+          </select>
+        </label>
+
+        <label className="row" style={{ gap: 8 }}>
+          <span className="label">Rotate</span>
+          <input
+            className="input"
+            type="checkbox"
+            checked={config.target.rotate ?? false}
+            onChange={(e) => onConfigChange({
+              ...config,
+              target: { ...config.target, rotate: e.target.checked },
+            })}
+          />
+        </label>
+
+        <label className="row" style={{ gap: 8 }}>
           <span className="label">Size</span>
           <input
             className="input"
-            style={{ width: 120 }}
-            type="number"
+            type="range"
             min={8}
             max={120}
+            step={1}
             value={config.target.sizePx}
             onChange={(e) => onConfigChange({
               ...config,
               target: { ...config.target, sizePx: parseInt(e.target.value, 10) || 0 },
             })}
           />
+          <span className="value">{config.target.sizePx}px</span>
         </label>
 
         <label className="row" style={{ gap: 8 }}>
@@ -145,6 +183,23 @@ export default function Controls({ playing, remainingSec, onPlay, onStop, onRese
               audio: { ...config.audio, volume: parseFloat(e.target.value) },
             })}
           />
+        </label>
+
+        <label className="row" style={{ gap: 8 }}>
+          <span className="label">Waveform</span>
+          <select
+            className="select"
+            value={config.audio.waveform ?? 'square'}
+            onChange={(e) => onConfigChange({
+              ...config,
+              audio: { ...config.audio, waveform: e.target.value as any },
+            })}
+          >
+            <option value="sine">Sine</option>
+            <option value="square">Square</option>
+            <option value="sawtooth">Sawtooth</option>
+            <option value="triangle">Triangle</option>
+          </select>
         </label>
 
         <label className="row" style={{ gap: 8 }}>

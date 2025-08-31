@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Target from './components/Target';
 import Controls from './components/Controls';
 import { AppConfig } from './types';
@@ -10,6 +10,8 @@ const DEFAULTS: AppConfig = {
   target: {
     sizePx: 24,
     color: '#00FF88',
+    shape: 'circle',
+    rotate: false,
     speedPxPerSec: 300,
     edgePaddingPx: 16,
     edgePauseMs: 0,
@@ -18,6 +20,7 @@ const DEFAULTS: AppConfig = {
   audio: {
     mode: 'click',
     volume: 0.8,
+    waveform: 'square',
   },
 };
 
@@ -39,7 +42,7 @@ export default function App() {
   useEffect(() => saveJSON(config), [config]);
   useEffect(() => setRemaining(config.durationSec), [config.durationSec]);
 
-  const audio = useAudioEngine(true, config.audio.volume);
+  const audio = useAudioEngine(true, config.audio.volume, config.audio.waveform ?? 'square');
 
   // Ensure audio engine suspends when not playing
   useEffect(() => {
@@ -67,6 +70,14 @@ export default function App() {
   }, [playing, audio]);
 
   const remainingRounded = useMemo(() => Math.ceil(remaining), [remaining]);
+  
+  // Stable callbacks to avoid re-creating rAF in child effects
+  const handlePosition = useCallback((n: number) => {
+    audio.setPan(n * 2 - 1);
+  }, [audio]);
+  const handleEdge = useCallback(() => {
+    if (config.audio.mode === 'click') audio.click();
+  }, [audio, config.audio.mode]);
 
   return (
     <div className="app">
@@ -77,13 +88,15 @@ export default function App() {
         <Target
           color={config.target.color}
           sizePx={config.target.sizePx}
+          shape={config.target.shape ?? 'circle'}
+          rotate={config.target.rotate ?? false}
           speedPxPerSec={config.target.speedPxPerSec}
           edgePaddingPx={config.target.edgePaddingPx}
           edgePauseMs={config.target.edgePauseMs}
           startPosition={config.target.startPosition}
           playing={playing}
-          onPosition={(n) => audio.setPan(n * 2 - 1)}
-          onEdge={() => { if (config.audio.mode === 'click') audio.click(); }}
+          onPosition={handlePosition}
+          onEdge={handleEdge}
         />
       </main>
       <Controls

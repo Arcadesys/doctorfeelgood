@@ -46,7 +46,7 @@ export default function Controls({ playing, remainingSec, onPlay, onStop, onRese
             className="input"
             type="range"
             min={60}
-            max={4800}
+            max={2400}
             step={50}
             value={config.target.speedPxPerSec}
             onChange={(e) => onConfigChange({
@@ -172,6 +172,15 @@ export default function Controls({ playing, remainingSec, onPlay, onStop, onRese
               onConfigChange({
                 ...config,
                 target: { ...config.target, color: e.target.value },
+              });
+            }}
+            onInput={(e) => {
+              // Safari fallback - onInput often works when onChange doesn't
+              const target = e.target as HTMLInputElement;
+              console.log('Color changed from', config.target.color, 'to', target.value);
+              onConfigChange({
+                ...config,
+                target: { ...config.target, color: target.value },
               });
             }}
           />

@@ -12,7 +12,7 @@ function createDefaultConfig(): AppConfig {
       color: '#00FF88',
       shape: 'circle',
       rotate: false,
-      speedPxPerSec: 400,
+      speedPxPerSec: 3200,
       edgePaddingPx: 16,
       edgePauseMs: 0,
       startPosition: 'center',
@@ -129,7 +129,7 @@ describe('Controls', () => {
       const onConfigChange = vi.fn();
       renderControls({ onConfigChange });
       
-      const speedSlider = screen.getByDisplayValue('400');
+      const speedSlider = screen.getByDisplayValue('3200');
       fireEvent.change(speedSlider, { target: { value: '600' } });
       
       expect(onConfigChange).toHaveBeenCalledWith(
@@ -263,7 +263,7 @@ describe('Controls', () => {
             color: '#3366cc', 
             shape: 'circle',
             rotate: false,
-            speedPxPerSec: 400,
+            speedPxPerSec: 3200,
             edgePaddingPx: 16,
             edgePauseMs: 0,
             startPosition: 'center',

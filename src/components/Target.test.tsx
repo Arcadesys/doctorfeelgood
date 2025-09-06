@@ -18,17 +18,15 @@ afterEach(() => {
 });
 
 const defaultProps = {
+  color: '#00FF88',
   sizePx: 24,
-  color: '#00ff88',
   shape: 'circle' as const,
   rotate: false,
-  playing: false,
-  speedPxPerSec: 400,
+  speedPxPerSec: 3200,
   edgePaddingPx: 16,
   edgePauseMs: 0,
   startPosition: 'center' as const,
-  onPosition: vi.fn(),
-  onEdge: vi.fn(),
+  playing: false,
 };
 
 describe('Target', () => {

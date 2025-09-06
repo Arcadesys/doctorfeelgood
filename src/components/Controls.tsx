@@ -45,14 +45,18 @@ export default function Controls({ playing, remainingSec, onPlay, onStop, onRese
             className="input"
             type="range"
             min={60}
-            max={1200}
-            step={20}
+            max={7000}
+            step={50}
             value={config.target.speedPxPerSec}
             onChange={(e) => onConfigChange({
               ...config,
               target: { ...config.target, speedPxPerSec: parseInt(e.target.value, 10) },
             })}
           />
+          <span className="value">
+            {config.target.speedPxPerSec} px/s 
+            (~{Math.round((config.target.speedPxPerSec / 2400) * 60)} BPM)
+          </span>
         </label>
 
         <label className="row" style={{ gap: 8 }}>

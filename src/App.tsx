@@ -12,7 +12,7 @@ const DEFAULTS: AppConfig = {
     color: '#00FF88',
     shape: 'circle',
     rotate: false,
-    speedPxPerSec: 300,
+    speedPxPerSec: 400,
     edgePaddingPx: 16,
     edgePauseMs: 0,
     startPosition: 'center',

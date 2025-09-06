@@ -217,6 +217,10 @@ export default function Controls({ playing, remainingSec, onPlay, onStop, onRese
             onChange={(e) => onConfigChange({ ...config, audio: { ...config.audio, mode: e.target.value as any } })}
           >
             <option value="click">Click</option>
+            <option value="beep">Beep</option>
+            <option value="hiss">Hiss</option>
+            <option value="chirp">Chirp</option>
+            <option value="pulse">Pulse</option>
             <option value="file">Custom File</option>
           </select>
         </label>

@@ -1,4 +1,4 @@
-export type AudioMode = 'click' | 'file';
+export type AudioMode = 'click' | 'beep' | 'hiss' | 'chirp' | 'pulse' | 'file';
 export type AudioWaveform = 'sine' | 'square' | 'sawtooth' | 'triangle';
 
 export interface AppConfig {

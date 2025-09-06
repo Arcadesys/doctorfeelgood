@@ -45,8 +45,8 @@ export default function Controls({ playing, remainingSec, onPlay, onStop, onRese
             className="input"
             type="range"
             min={60}
-            max={600}
-            step={10}
+            max={1200}
+            step={20}
             value={config.target.speedPxPerSec}
             onChange={(e) => onConfigChange({
               ...config,

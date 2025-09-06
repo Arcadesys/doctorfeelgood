@@ -22,7 +22,7 @@ const defaultProps = {
   sizePx: 24,
   shape: 'circle' as const,
   rotate: false,
-  speedPxPerSec: 3200,
+  speedPxPerSec: 2400,
   edgePaddingPx: 16,
   edgePauseMs: 0,
   startPosition: 'center' as const,

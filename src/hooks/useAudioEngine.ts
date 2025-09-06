@@ -104,6 +104,20 @@ export function useAudioEngine(
         const gain = gainRef.current;
         if (!ctx || !pan || !gain) return;
 
+        const playGeneratedClick = () => {
+          const osc = ctx.createOscillator();
+          const oscGain = ctx.createGain();
+          // Shape of the click transient
+          osc.type = waveform;
+          osc.frequency.value = 950; // short tick
+          oscGain.gain.value = 0.5;
+          osc.connect(oscGain);
+          oscGain.connect(pan);
+          const now = ctx.currentTime;
+          osc.start(now);
+          osc.stop(now + 0.03);
+        };
+
         if (audioMode === 'file' && audioBufferRef.current) {
           // Play custom audio file
           try {
@@ -115,25 +129,12 @@ export function useAudioEngine(
           } catch (error) {
             console.error('Failed to play custom audio:', error);
             // Fallback to generated click if custom audio fails
-            this.playGeneratedClick(ctx, pan, waveform);
+            playGeneratedClick();
           }
         } else {
           // Play generated click sound
-          this.playGeneratedClick(ctx, pan, waveform);
+          playGeneratedClick();
         }
-      },
-      playGeneratedClick: (ctx: AudioContext, pan: StereoPannerNode, waveform: OscillatorType) => {
-        const osc = ctx.createOscillator();
-        const oscGain = ctx.createGain();
-        // Shape of the click transient
-        osc.type = waveform;
-        osc.frequency.value = 950; // short tick
-        oscGain.gain.value = 0.5;
-        osc.connect(oscGain);
-        oscGain.connect(pan);
-        const now = ctx.currentTime;
-        osc.start(now);
-        osc.stop(now + 0.03);
       },
     };
     return api;

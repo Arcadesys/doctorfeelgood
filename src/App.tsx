@@ -42,7 +42,13 @@ export default function App() {
   useEffect(() => saveJSON(config), [config]);
   useEffect(() => setRemaining(config.durationSec), [config.durationSec]);
 
-  const audio = useAudioEngine(true, config.audio.volume, config.audio.waveform ?? 'square');
+  const audio = useAudioEngine(
+    true, 
+    config.audio.volume, 
+    config.audio.waveform ?? 'square',
+    config.audio.mode,
+    config.audio.fileUrl
+  );
 
   // Ensure audio engine suspends when not playing
   useEffect(() => {

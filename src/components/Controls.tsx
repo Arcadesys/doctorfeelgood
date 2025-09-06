@@ -1,5 +1,6 @@
 import React from 'react';
 import DurationPicker from './DurationPicker';
+import FileUpload from './FileUpload';
 import { AppConfig } from '../types';
 
 type Props = {
@@ -214,9 +215,23 @@ export default function Controls({ playing, remainingSec, onPlay, onStop, onRese
             onChange={(e) => onConfigChange({ ...config, audio: { ...config.audio, mode: e.target.value as any } })}
           >
             <option value="click">Click</option>
-            <option value="file">File (coming soon)</option>
+            <option value="file">Custom File</option>
           </select>
         </label>
+
+        {config.audio.mode === 'file' && (
+          <label className="row" style={{ gap: 8 }}>
+            <span className="label">Sound File</span>
+            <FileUpload
+              onFileSelect={(fileUrl, fileName) => onConfigChange({
+                ...config,
+                audio: { ...config.audio, fileUrl, fileName }
+              })}
+              currentFileName={config.audio.fileName}
+              accept="audio/*"
+            />
+          </label>
+        )}
       </div>
     </div>
   );

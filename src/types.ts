@@ -16,6 +16,7 @@ export interface AppConfig {
   audio: {
     mode: AudioMode;
     fileUrl?: string;
+    fileName?: string;
     volume: number; // 0..1
     waveform?: AudioWaveform; // oscillator waveform for generated clicks
   };

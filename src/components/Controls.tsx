@@ -46,7 +46,7 @@ export default function Controls({ playing, remainingSec, onPlay, onStop, onRese
             className="input"
             type="range"
             min={60}
-            max={7000}
+            max={4800}
             step={50}
             value={config.target.speedPxPerSec}
             onChange={(e) => onConfigChange({
@@ -190,22 +190,24 @@ export default function Controls({ playing, remainingSec, onPlay, onStop, onRese
           />
         </label>
 
-        <label className="row" style={{ gap: 8 }}>
-          <span className="label">Waveform</span>
-          <select
-            className="select"
-            value={config.audio.waveform ?? 'square'}
-            onChange={(e) => onConfigChange({
-              ...config,
-              audio: { ...config.audio, waveform: e.target.value as any },
-            })}
-          >
-            <option value="sine">Sine</option>
-            <option value="square">Square</option>
-            <option value="sawtooth">Sawtooth</option>
-            <option value="triangle">Triangle</option>
-          </select>
-        </label>
+        {config.audio.mode === 'click' && (
+          <label className="row" style={{ gap: 8 }}>
+            <span className="label">Waveform</span>
+            <select
+              className="select"
+              value={config.audio.waveform ?? 'square'}
+              onChange={(e) => onConfigChange({
+                ...config,
+                audio: { ...config.audio, waveform: e.target.value as any },
+              })}
+            >
+              <option value="sine">Sine</option>
+              <option value="square">Square</option>
+              <option value="sawtooth">Sawtooth</option>
+              <option value="triangle">Triangle</option>
+            </select>
+          </label>
+        )}
 
         <label className="row" style={{ gap: 8 }}>
           <span className="label">Audio</span>
@@ -228,6 +230,7 @@ export default function Controls({ playing, remainingSec, onPlay, onStop, onRese
                 audio: { ...config.audio, fileUrl, fileName }
               })}
               currentFileName={config.audio.fileName}
+              currentFileUrl={config.audio.fileUrl}
               accept="audio/*"
             />
           </label>

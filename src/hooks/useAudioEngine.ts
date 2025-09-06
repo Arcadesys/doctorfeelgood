@@ -41,6 +41,10 @@ export function useAudioEngine(
 
       try {
         const response = await fetch(fileUrl);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch audio file: ${response.statusText}`);
+        }
+        
         const arrayBuffer = await response.arrayBuffer();
         
         if (!ctxRef.current) {
@@ -53,6 +57,7 @@ export function useAudioEngine(
       } catch (error) {
         console.error('Failed to load audio file:', error);
         audioBufferRef.current = null;
+        // You might want to show a user-friendly error message here
       } finally {
         loadingRef.current = false;
       }
@@ -101,25 +106,34 @@ export function useAudioEngine(
 
         if (audioMode === 'file' && audioBufferRef.current) {
           // Play custom audio file
-          const source = ctx.createBufferSource();
-          source.buffer = audioBufferRef.current;
-          source.connect(pan);
-          const now = ctx.currentTime;
-          source.start(now);
+          try {
+            const source = ctx.createBufferSource();
+            source.buffer = audioBufferRef.current;
+            source.connect(pan);
+            const now = ctx.currentTime;
+            source.start(now);
+          } catch (error) {
+            console.error('Failed to play custom audio:', error);
+            // Fallback to generated click if custom audio fails
+            this.playGeneratedClick(ctx, pan, waveform);
+          }
         } else {
           // Play generated click sound
-          const osc = ctx.createOscillator();
-          const oscGain = ctx.createGain();
-          // Shape of the click transient
-          osc.type = waveform;
-          osc.frequency.value = 950; // short tick
-          oscGain.gain.value = 0.5;
-          osc.connect(oscGain);
-          oscGain.connect(pan);
-          const now = ctx.currentTime;
-          osc.start(now);
-          osc.stop(now + 0.03);
+          this.playGeneratedClick(ctx, pan, waveform);
         }
+      },
+      playGeneratedClick: (ctx: AudioContext, pan: StereoPannerNode, waveform: OscillatorType) => {
+        const osc = ctx.createOscillator();
+        const oscGain = ctx.createGain();
+        // Shape of the click transient
+        osc.type = waveform;
+        osc.frequency.value = 950; // short tick
+        oscGain.gain.value = 0.5;
+        osc.connect(oscGain);
+        oscGain.connect(pan);
+        const now = ctx.currentTime;
+        osc.start(now);
+        osc.stop(now + 0.03);
       },
     };
     return api;

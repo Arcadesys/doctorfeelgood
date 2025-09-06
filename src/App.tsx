@@ -82,8 +82,8 @@ export default function App() {
     audio.setPan(n * 2 - 1);
   }, [audio]);
   const handleEdge = useCallback(() => {
-    if (config.audio.mode === 'click') audio.click();
-  }, [audio, config.audio.mode]);
+    audio.click();
+  }, [audio]);
 
   return (
     <div className="app">

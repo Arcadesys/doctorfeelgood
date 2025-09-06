@@ -12,7 +12,7 @@ export function useAudioEngine(
   enabled: boolean, 
   volume: number, 
   waveform: OscillatorType = 'square',
-  audioMode: 'click' | 'file' = 'click',
+  audioMode: 'click' | 'beep' | 'hiss' | 'chirp' | 'pulse' | 'file' = 'click',
   fileUrl?: string
 ): AudioEngineAPI {
   const ctxRef = useRef<AudioContext | null>(null);
@@ -40,12 +40,14 @@ export function useAudioEngine(
       loadingRef.current = true;
 
       try {
+        console.log('Loading audio file:', fileUrl);
         const response = await fetch(fileUrl);
         if (!response.ok) {
           throw new Error(`Failed to fetch audio file: ${response.statusText}`);
         }
         
         const arrayBuffer = await response.arrayBuffer();
+        console.log('Audio file loaded, size:', arrayBuffer.byteLength, 'bytes');
         
         if (!ctxRef.current) {
           const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -54,6 +56,7 @@ export function useAudioEngine(
 
         const audioBuffer = await ctxRef.current.decodeAudioData(arrayBuffer);
         audioBufferRef.current = audioBuffer;
+        console.log('Audio file decoded successfully, duration:', audioBuffer.duration, 'seconds');
       } catch (error) {
         console.error('Failed to load audio file:', error);
         audioBufferRef.current = null;
@@ -104,18 +107,115 @@ export function useAudioEngine(
         const gain = gainRef.current;
         if (!ctx || !pan || !gain) return;
 
-        const playGeneratedClick = () => {
-          const osc = ctx.createOscillator();
-          const oscGain = ctx.createGain();
-          // Shape of the click transient
-          osc.type = waveform;
-          osc.frequency.value = 950; // short tick
-          oscGain.gain.value = 0.5;
-          osc.connect(oscGain);
-          oscGain.connect(pan);
+        const playGeneratedSound = () => {
           const now = ctx.currentTime;
-          osc.start(now);
-          osc.stop(now + 0.03);
+          
+          switch (audioMode) {
+            case 'click': {
+              // Short tick sound
+              const osc = ctx.createOscillator();
+              const oscGain = ctx.createGain();
+              osc.type = waveform;
+              osc.frequency.value = 950;
+              oscGain.gain.value = 0.5;
+              osc.connect(oscGain);
+              oscGain.connect(pan);
+              osc.start(now);
+              osc.stop(now + 0.03);
+              break;
+            }
+            
+            case 'beep': {
+              // Classic beep sound
+              const osc = ctx.createOscillator();
+              const oscGain = ctx.createGain();
+              osc.type = 'sine';
+              osc.frequency.value = 800;
+              oscGain.gain.setValueAtTime(0, now);
+              oscGain.gain.linearRampToValueAtTime(0.3, now + 0.01);
+              oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+              osc.connect(oscGain);
+              oscGain.connect(pan);
+              osc.start(now);
+              osc.stop(now + 0.15);
+              break;
+            }
+            
+            case 'hiss': {
+              // White noise burst
+              const bufferSize = ctx.sampleRate * 0.1; // 100ms
+              const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+              const data = buffer.getChannelData(0);
+              for (let i = 0; i < bufferSize; i++) {
+                data[i] = (Math.random() * 2 - 1) * 0.3;
+              }
+              const source = ctx.createBufferSource();
+              const hissGain = ctx.createGain();
+              const filter = ctx.createBiquadFilter();
+              filter.type = 'highpass';
+              filter.frequency.value = 3000;
+              source.buffer = buffer;
+              hissGain.gain.setValueAtTime(0, now);
+              hissGain.gain.linearRampToValueAtTime(0.4, now + 0.01);
+              hissGain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+              source.connect(filter);
+              filter.connect(hissGain);
+              hissGain.connect(pan);
+              source.start(now);
+              break;
+            }
+            
+            case 'chirp': {
+              // Frequency sweep
+              const osc = ctx.createOscillator();
+              const oscGain = ctx.createGain();
+              osc.type = 'sine';
+              osc.frequency.setValueAtTime(200, now);
+              osc.frequency.exponentialRampToValueAtTime(1200, now + 0.12);
+              oscGain.gain.setValueAtTime(0, now);
+              oscGain.gain.linearRampToValueAtTime(0.25, now + 0.01);
+              oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+              osc.connect(oscGain);
+              oscGain.connect(pan);
+              osc.start(now);
+              osc.stop(now + 0.12);
+              break;
+            }
+            
+            case 'pulse': {
+              // Rhythmic pulse
+              const osc = ctx.createOscillator();
+              const oscGain = ctx.createGain();
+              osc.type = 'square';
+              osc.frequency.value = 150;
+              oscGain.gain.setValueAtTime(0, now);
+              // Create pulse pattern: on-off-on-off
+              oscGain.gain.linearRampToValueAtTime(0.3, now + 0.01);
+              oscGain.gain.linearRampToValueAtTime(0.3, now + 0.05);
+              oscGain.gain.linearRampToValueAtTime(0, now + 0.06);
+              oscGain.gain.linearRampToValueAtTime(0, now + 0.08);
+              oscGain.gain.linearRampToValueAtTime(0.3, now + 0.09);
+              oscGain.gain.linearRampToValueAtTime(0.3, now + 0.13);
+              oscGain.gain.linearRampToValueAtTime(0, now + 0.14);
+              osc.connect(oscGain);
+              oscGain.connect(pan);
+              osc.start(now);
+              osc.stop(now + 0.2);
+              break;
+            }
+            
+            default:
+              // Fallback to click
+              const osc = ctx.createOscillator();
+              const oscGain = ctx.createGain();
+              osc.type = waveform;
+              osc.frequency.value = 950;
+              oscGain.gain.value = 0.5;
+              osc.connect(oscGain);
+              oscGain.connect(pan);
+              osc.start(now);
+              osc.stop(now + 0.03);
+          }
         };
 
         if (audioMode === 'file' && audioBufferRef.current) {
@@ -126,14 +226,15 @@ export function useAudioEngine(
             source.connect(pan);
             const now = ctx.currentTime;
             source.start(now);
+            console.log('Playing custom audio file');
           } catch (error) {
             console.error('Failed to play custom audio:', error);
             // Fallback to generated click if custom audio fails
-            playGeneratedClick();
+            playGeneratedSound();
           }
         } else {
-          // Play generated click sound
-          playGeneratedClick();
+          // Play generated sound
+          playGeneratedSound();
         }
       },
     };

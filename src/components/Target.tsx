@@ -89,6 +89,7 @@ function Target({ color, sizePx, shape, rotate, speedPxPerSec, edgePaddingPx, ed
   useEffect(() => {
     // center vertically, apply size/color/shape
     if (dotRef.current) {
+      console.log('Target updating with color:', color, 'shape:', shape);
       dotRef.current.style.top = `${Math.max(0, (height - sizePx) / 2)}px`;
       dotRef.current.style.width = `${sizePx}px`;
       dotRef.current.style.height = `${sizePx}px`;
@@ -98,6 +99,7 @@ function Target({ color, sizePx, shape, rotate, speedPxPerSec, edgePaddingPx, ed
       dotRef.current.style.borderRadius = (shape === 'circle' || shape === 'smiley') ? '999px' : '0px';
       // Feature color for svg shapes that use currentColor (e.g., smiley)
       dotRef.current.style.color = isLight(color) ? '#000' : '#fff';
+      console.log('Target background set to:', dotRef.current.style.background);
     }
   }, [height, sizePx, color, shape]);
 

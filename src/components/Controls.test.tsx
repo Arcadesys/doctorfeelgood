@@ -240,6 +240,118 @@ describe('Controls', () => {
         })
       );
     });
+
+    it('updates target color', () => {
+      const onConfigChange = vi.fn();
+      renderControls({ onConfigChange });
+      
+      const colorInput = screen.getByLabelText('Color') as HTMLInputElement;
+      fireEvent.change(colorInput, { target: { value: '#ff0000' } });
+      
+      expect(onConfigChange).toHaveBeenCalledWith(
+        expect.objectContaining({
+          target: expect.objectContaining({ color: '#ff0000' })
+        })
+      );
+    });
+
+    it('renders color input with current color value', () => {
+      renderControls({ 
+        config: { 
+          target: { 
+            sizePx: 24,
+            color: '#3366cc', 
+            shape: 'circle',
+            rotate: false,
+            speedPxPerSec: 400,
+            edgePaddingPx: 16,
+            edgePauseMs: 0,
+            startPosition: 'center',
+          } 
+        } 
+      });
+      
+      const colorInput = screen.getByLabelText('Color') as HTMLInputElement;
+      expect(colorInput).toBeDefined();
+      expect(colorInput.getAttribute('type')).toBe('color');
+      expect(colorInput.value.toLowerCase()).toBe('#3366cc');
+    });
+
+    it('preserves other target properties when updating color', () => {
+      const onConfigChange = vi.fn();
+      const initialConfig = {
+        target: {
+          sizePx: 32,
+          color: '#00FF88',
+          shape: 'square' as const,
+          rotate: true,
+          speedPxPerSec: 600,
+          edgePaddingPx: 20,
+          edgePauseMs: 100,
+          startPosition: 'left' as const,
+        }
+      };
+      
+      renderControls({ onConfigChange, config: initialConfig });
+      
+      const colorInput = screen.getByLabelText('Color') as HTMLInputElement;
+      fireEvent.change(colorInput, { target: { value: '#ffff00' } });
+      
+      expect(onConfigChange).toHaveBeenCalledWith(
+        expect.objectContaining({
+          target: {
+            sizePx: 32,
+            color: '#ffff00',
+            shape: 'square',
+            rotate: true,
+            speedPxPerSec: 600,
+            edgePaddingPx: 20,
+            edgePauseMs: 100,
+            startPosition: 'left',
+          }
+        })
+      );
+    });
+
+    it('handles various color formats', () => {
+      const onConfigChange = vi.fn();
+      renderControls({ onConfigChange });
+      
+      const colorInput = screen.getByLabelText('Color') as HTMLInputElement;
+      
+      // Test different hex color formats
+      fireEvent.change(colorInput, { target: { value: '#ffffff' } });
+      expect(onConfigChange).toHaveBeenNthCalledWith(1,
+        expect.objectContaining({
+          target: expect.objectContaining({ color: '#ffffff' })
+        })
+      );
+      
+      fireEvent.change(colorInput, { target: { value: '#000000' } });
+      expect(onConfigChange).toHaveBeenNthCalledWith(2,
+        expect.objectContaining({
+          target: expect.objectContaining({ color: '#000000' })
+        })
+      );
+      
+      fireEvent.change(colorInput, { target: { value: '#7f7f7f' } });
+      expect(onConfigChange).toHaveBeenNthCalledWith(3,
+        expect.objectContaining({
+          target: expect.objectContaining({ color: '#7f7f7f' })
+        })
+      );
+    });
+
+    it('color selector has proper accessibility attributes', () => {
+      renderControls();
+      
+      const colorLabel = screen.getByText('Color');
+      expect(colorLabel).toBeDefined();
+      
+      const colorInput = screen.getByLabelText('Color') as HTMLInputElement;
+      expect(colorInput.getAttribute('type')).toBe('color');
+      expect(colorInput.getAttribute('class')).toBe('input');
+    });
   });
 
   describe('Audio controls', () => {

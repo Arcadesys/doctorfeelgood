@@ -167,10 +167,13 @@ export default function Controls({ playing, remainingSec, onPlay, onStop, onRese
             className="input"
             type="color"
             value={config.target.color}
-            onChange={(e) => onConfigChange({
-              ...config,
-              target: { ...config.target, color: e.target.value },
-            })}
+            onChange={(e) => {
+              console.log('Color changed from', config.target.color, 'to', e.target.value);
+              onConfigChange({
+                ...config,
+                target: { ...config.target, color: e.target.value },
+              });
+            }}
           />
         </label>
 

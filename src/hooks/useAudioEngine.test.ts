@@ -55,16 +55,16 @@ const mockAudioContext = {
 };
 
 // Mock fetch for file loading
-global.fetch = vi.fn();
+globalThis.fetch = vi.fn();
 
 beforeEach(() => {
   vi.clearAllMocks();
   // Mock AudioContext constructor
-  global.AudioContext = vi.fn(() => mockAudioContext) as any;
-  (global as any).webkitAudioContext = global.AudioContext;
+  globalThis.AudioContext = vi.fn(() => mockAudioContext) as any;
+  (globalThis as any).webkitAudioContext = globalThis.AudioContext;
   
   // Mock URL.createObjectURL
-  global.URL = {
+  globalThis.URL = {
     createObjectURL: vi.fn(() => 'blob:mock-url'),
     revokeObjectURL: vi.fn(),
   } as any;
@@ -96,7 +96,7 @@ describe('useAudioEngine', () => {
       result.current.start();
     });
 
-    expect(global.AudioContext).toHaveBeenCalled();
+    expect(globalThis.AudioContext).toHaveBeenCalled();
     expect(mockAudioContext.createGain).toHaveBeenCalled();
     expect(mockAudioContext.createStereoPanner).toHaveBeenCalled();
   });
@@ -186,7 +186,7 @@ describe('useAudioEngine', () => {
 
   it('loads audio file when fileUrl is provided', async () => {
     const mockArrayBuffer = new ArrayBuffer(1000);
-    (global.fetch as any).mockResolvedValue({
+    (globalThis.fetch as any).mockResolvedValue({
       ok: true,
       arrayBuffer: () => Promise.resolve(mockArrayBuffer),
     });
@@ -200,12 +200,12 @@ describe('useAudioEngine', () => {
       await new Promise(resolve => setTimeout(resolve, 0));
     });
 
-    expect(global.fetch).toHaveBeenCalledWith('blob:test-url');
+    expect(globalThis.fetch).toHaveBeenCalledWith('blob:test-url');
     expect(mockAudioContext.decodeAudioData).toHaveBeenCalledWith(mockArrayBuffer);
   });
 
   it('handles audio file loading errors gracefully', async () => {
-    (global.fetch as any).mockRejectedValue(new Error('Network error'));
+    (globalThis.fetch as any).mockRejectedValue(new Error('Network error'));
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const { result } = renderHook(() => 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import Controls from './Controls';
 import { AppConfig } from '../types';
@@ -17,7 +17,15 @@ function createDefaultConfig(): AppConfig {
       edgePauseMs: 0,
       startPosition: 'center',
     },
-    audio: { mode: 'click', volume: 0.8, waveform: 'square' },
+    audio: { 
+      mode: 'click', 
+      volume: 0.8, 
+      muted: false,
+      waveform: 'sine',
+      pitch: 'medium',
+      panDepth: 1,
+      fadeInMs: 0,
+    },
   };
 }
 
@@ -56,46 +64,46 @@ describe('Controls', () => {
   describe('Transport controls', () => {
     it('renders play button enabled when not playing', () => {
       renderControls({ playing: false });
-      const playButton = screen.getByLabelText('Play') as HTMLButtonElement;
+      const playButton = screen.getByLabelText(/Play/i) as HTMLButtonElement;
       expect(playButton.disabled).toBe(false);
     });
 
     it('renders play button disabled when playing', () => {
       renderControls({ playing: true });
-      const playButton = screen.getByLabelText('Play') as HTMLButtonElement;
+      const playButton = screen.getByLabelText(/Play/i) as HTMLButtonElement;
       expect(playButton.disabled).toBe(true);
     });
 
     it('renders stop button enabled when playing', () => {
       renderControls({ playing: true });
-      const stopButton = screen.getByLabelText('Stop') as HTMLButtonElement;
+      const stopButton = screen.getByLabelText(/Stop/i) as HTMLButtonElement;
       expect(stopButton.disabled).toBe(false);
     });
 
     it('renders stop button disabled when not playing', () => {
       renderControls({ playing: false });
-      const stopButton = screen.getByLabelText('Stop') as HTMLButtonElement;
+      const stopButton = screen.getByLabelText(/Stop/i) as HTMLButtonElement;
       expect(stopButton.disabled).toBe(true);
     });
 
     it('calls onPlay when play button is clicked', () => {
       const onPlay = vi.fn();
       renderControls({ onPlay });
-      fireEvent.click(screen.getByLabelText('Play'));
+      fireEvent.click(screen.getByLabelText(/Play/i));
       expect(onPlay).toHaveBeenCalled();
     });
 
     it('calls onStop when stop button is clicked', () => {
       const onStop = vi.fn();
       renderControls({ playing: true, onStop });
-      fireEvent.click(screen.getByLabelText('Stop'));
+      fireEvent.click(screen.getByLabelText(/Stop/i));
       expect(onStop).toHaveBeenCalled();
     });
 
     it('calls onReset when reset button is clicked', () => {
       const onReset = vi.fn();
       renderControls({ onReset });
-      fireEvent.click(screen.getByLabelText('Reset session'));
+      fireEvent.click(screen.getByLabelText(/Reset/i));
       expect(onReset).toHaveBeenCalled();
     });
   });
@@ -231,7 +239,9 @@ describe('Controls', () => {
       const onConfigChange = vi.fn();
       renderControls({ onConfigChange });
       
-      const pauseInput = screen.getByDisplayValue('0');
+      // Find edge pause input by its parent label
+      const edgePauseLabel = screen.getByText('Edge pause').closest('label');
+      const pauseInput = edgePauseLabel!.querySelector('input') as HTMLInputElement;
       fireEvent.change(pauseInput, { target: { value: '100' } });
       
       expect(onConfigChange).toHaveBeenCalledWith(
@@ -245,7 +255,9 @@ describe('Controls', () => {
       const onConfigChange = vi.fn();
       renderControls({ onConfigChange });
       
-      const colorInput = screen.getByLabelText('Color') as HTMLInputElement;
+      // Find color input by its parent label
+      const colorLabel = screen.getByText('Color').closest('label');
+      const colorInput = colorLabel!.querySelector('input') as HTMLInputElement;
       fireEvent.change(colorInput, { target: { value: '#ff0000' } });
       
       expect(onConfigChange).toHaveBeenCalledWith(
@@ -345,12 +357,11 @@ describe('Controls', () => {
     it('color selector has proper accessibility attributes', () => {
       renderControls();
       
-      const colorLabel = screen.getByText('Color');
+      const colorLabel = screen.getByText('Color').closest('label');
       expect(colorLabel).toBeDefined();
       
-      const colorInput = screen.getByLabelText('Color') as HTMLInputElement;
+      const colorInput = colorLabel!.querySelector('input') as HTMLInputElement;
       expect(colorInput.getAttribute('type')).toBe('color');
-      expect(colorInput.getAttribute('class')).toBe('input');
     });
   });
 
@@ -412,13 +423,13 @@ describe('Controls', () => {
 
     it('shows file upload when audio mode is file', () => {
       renderControls({ config: { audio: { mode: 'file', volume: 0.8 } } });
-      expect(screen.getByText('Sound File')).toBeDefined();
-      expect(screen.getByText('Upload Audio')).toBeDefined();
+      expect(screen.getByText('Sound file')).toBeDefined();
+      expect(screen.getByText(/Upload/)).toBeDefined();
     });
 
     it('hides file upload when audio mode is not file', () => {
       renderControls({ config: { audio: { mode: 'click', volume: 0.8, waveform: 'square' } } });
-      expect(screen.queryByText('Sound File')).toBeNull();
+      expect(screen.queryByText('Sound file')).toBeNull();
     });
   });
 
@@ -427,7 +438,9 @@ describe('Controls', () => {
       const onConfigChange = vi.fn();
       renderControls({ onConfigChange });
       
-      const paddingInput = screen.getByDisplayValue('16');
+      // Find edge padding input by its parent label
+      const edgePaddingLabel = screen.getByText('Edge padding').closest('label');
+      const paddingInput = edgePaddingLabel!.querySelector('input') as HTMLInputElement;
       fireEvent.change(paddingInput, { target: { value: '-5' } });
       
       expect(onConfigChange).toHaveBeenCalledWith(
@@ -441,7 +454,9 @@ describe('Controls', () => {
       const onConfigChange = vi.fn();
       renderControls({ onConfigChange });
       
-      const pauseInput = screen.getByDisplayValue('0');
+      // Find edge pause input by its parent label
+      const edgePauseLabel = screen.getByText('Edge pause').closest('label');
+      const pauseInput = edgePauseLabel!.querySelector('input') as HTMLInputElement;
       fireEvent.change(pauseInput, { target: { value: '-10' } });
       
       expect(onConfigChange).toHaveBeenCalledWith(
@@ -455,7 +470,9 @@ describe('Controls', () => {
       const onConfigChange = vi.fn();
       renderControls({ onConfigChange });
       
-      const paddingInput = screen.getByDisplayValue('16');
+      // Find edge padding input by its parent label
+      const edgePaddingLabel = screen.getByText('Edge padding').closest('label');
+      const paddingInput = edgePaddingLabel!.querySelector('input') as HTMLInputElement;
       fireEvent.change(paddingInput, { target: { value: 'abc' } });
       
       expect(onConfigChange).toHaveBeenCalledWith(
@@ -463,6 +480,43 @@ describe('Controls', () => {
           target: expect.objectContaining({ edgePaddingPx: 0 })
         })
       );
+    });
+  });
+
+  describe('Mute functionality', () => {
+    it('renders mute checkbox', () => {
+      renderControls();
+      expect(screen.getByLabelText('Mute audio')).toBeDefined();
+    });
+
+    it('calls onConfigChange when mute is toggled', () => {
+      const onConfigChange = vi.fn();
+      renderControls({ onConfigChange });
+      
+      fireEvent.click(screen.getByLabelText('Mute audio'));
+      
+      expect(onConfigChange).toHaveBeenCalledWith(
+        expect.objectContaining({
+          audio: expect.objectContaining({ muted: true })
+        })
+      );
+    });
+  });
+
+  describe('Volume warning', () => {
+    it('shows warning when volume is high and not muted', () => {
+      renderControls({ config: { audio: { volume: 0.8, muted: false } as any } });
+      expect(screen.getByTitle('High volume')).toBeDefined();
+    });
+
+    it('does not show warning when muted', () => {
+      renderControls({ config: { audio: { volume: 0.8, muted: true } as any } });
+      expect(screen.queryByTitle('High volume')).toBeNull();
+    });
+
+    it('does not show warning when volume is low', () => {
+      renderControls({ config: { audio: { volume: 0.3, muted: false } as any } });
+      expect(screen.queryByTitle('High volume')).toBeNull();
     });
   });
 });

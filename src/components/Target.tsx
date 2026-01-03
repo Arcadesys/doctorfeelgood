@@ -1,10 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { advancePosition, MotionState } from '../lib/motion';
+import type { BuiltinShape } from '../types';
 
 type Props = {
   color: string;
   sizePx: number;
-  shape: 'circle' | 'square' | 'diamond' | 'smiley' | 'triangle' | 'star' | 'hexagon' | 'ring' | 'bullseye' | 'cross' | 'heart';
+  shape: BuiltinShape | 'emoji' | 'custom';
+  emoji?: string;
+  customIconUrl?: string;
   rotate: boolean;
   speedPxPerSec: number;
   edgePaddingPx: number;
@@ -51,7 +54,7 @@ function isLight(hex: string): boolean {
   return lum > 0.6;
 }
 
-function Target({ color, sizePx, shape, rotate, speedPxPerSec, edgePaddingPx, edgePauseMs, startPosition, playing, onPosition, onEdge }: Props) {
+function Target({ color, sizePx, shape, emoji, customIconUrl, rotate, speedPxPerSec, edgePaddingPx, edgePauseMs, startPosition, playing, onPosition, onEdge }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const dotRef = useRef<HTMLDivElement>(null);
   const { width, height } = useMeasure(containerRef);
@@ -89,17 +92,28 @@ function Target({ color, sizePx, shape, rotate, speedPxPerSec, edgePaddingPx, ed
   useEffect(() => {
     // center vertically, apply size/color/shape
     if (dotRef.current) {
-      console.log('Target updating with color:', color, 'shape:', shape);
       dotRef.current.style.top = `${Math.max(0, (height - sizePx) / 2)}px`;
       dotRef.current.style.width = `${sizePx}px`;
       dotRef.current.style.height = `${sizePx}px`;
-      const usesSvg = shape !== 'circle' && shape !== 'square' && shape !== 'diamond';
-      // Fill color for non-SVG shapes
-      dotRef.current.style.background = usesSvg ? 'transparent' : color;
-      dotRef.current.style.borderRadius = (shape === 'circle' || shape === 'smiley') ? '999px' : '0px';
-      // Feature color for svg shapes that use currentColor (e.g., smiley)
-      dotRef.current.style.color = isLight(color) ? '#000' : '#fff';
-      console.log('Target background set to:', dotRef.current.style.background);
+      
+      // Handle emoji, custom icon, or built-in shapes
+      if (shape === 'emoji') {
+        dotRef.current.style.background = 'transparent';
+        dotRef.current.style.borderRadius = '0px';
+        dotRef.current.style.fontSize = `${sizePx * 0.85}px`;
+        dotRef.current.style.lineHeight = `${sizePx}px`;
+        dotRef.current.style.textAlign = 'center';
+      } else if (shape === 'custom') {
+        dotRef.current.style.background = 'transparent';
+        dotRef.current.style.borderRadius = '0px';
+      } else {
+        const usesSvg = shape !== 'circle' && shape !== 'square' && shape !== 'diamond';
+        // Fill color for non-SVG shapes
+        dotRef.current.style.background = usesSvg ? 'transparent' : color;
+        dotRef.current.style.borderRadius = (shape === 'circle' || shape === 'smiley') ? '999px' : '0px';
+        // Feature color for svg shapes that use currentColor (e.g., smiley)
+        dotRef.current.style.color = isLight(color) ? '#000' : '#fff';
+      }
     }
   }, [height, sizePx, color, shape]);
 
@@ -152,6 +166,10 @@ function Target({ color, sizePx, shape, rotate, speedPxPerSec, edgePaddingPx, ed
   return (
     <div ref={containerRef} className="stage-inner" aria-label="Bilateral visual stage">
       <div ref={dotRef} className="target" role="img" aria-label="moving target">
+        {shape === 'emoji' && emoji && (
+          <span aria-hidden style={{ display: 'block' }}>{emoji}</span>
+        )}
+
         {shape === 'smiley' && (
           <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" aria-hidden>
             <circle cx="50" cy="50" r="50" fill={color} />

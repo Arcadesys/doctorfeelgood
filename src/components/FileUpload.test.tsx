@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import FileUpload from './FileUpload';
 
@@ -9,9 +9,16 @@ vi.mock('../lib/audioUtils', () => ({
   revokeFileUrl: vi.fn(),
 }));
 
-import { isValidAudioFile, revokeFileUrl } from '../lib/audioUtils';
+// Mock the storage module
+vi.mock('../lib/storage', () => ({
+  saveCustomAudio: vi.fn(),
+  clearCustomAudio: vi.fn(),
+}));
 
-// Mock URL.createObjectURL
+import { isValidAudioFile, revokeFileUrl } from '../lib/audioUtils';
+import { saveCustomAudio, clearCustomAudio } from '../lib/storage';
+
+// Mock URL.createObjectURL (kept for blob URL revocation tests)
 Object.defineProperty(URL, 'createObjectURL', {
   writable: true,
   value: vi.fn(() => 'blob:mock-url'),
@@ -81,9 +88,13 @@ describe('FileUpload', () => {
     expect(clickSpy).toHaveBeenCalled();
   });
 
-  it('calls onFileSelect with valid audio file', () => {
+  it('calls onFileSelect with valid audio file', async () => {
     const onFileSelect = vi.fn();
     (isValidAudioFile as any).mockReturnValue(true);
+    (saveCustomAudio as any).mockResolvedValue({ 
+      success: true, 
+      dataUrl: 'data:audio/mpeg;base64,dGVzdA==' 
+    });
     
     render(<FileUpload {...defaultProps} onFileSelect={onFileSelect} />);
     
@@ -93,13 +104,15 @@ describe('FileUpload', () => {
     fireEvent.change(fileInput, { target: { files: [file] } });
     
     expect(isValidAudioFile).toHaveBeenCalledWith(file);
-    expect(URL.createObjectURL).toHaveBeenCalledWith(file);
-    expect(onFileSelect).toHaveBeenCalledWith('blob:mock-url', 'test.mp3');
+    
+    await waitFor(() => {
+      expect(saveCustomAudio).toHaveBeenCalledWith(file);
+      expect(onFileSelect).toHaveBeenCalledWith('data:audio/mpeg;base64,dGVzdA==', 'test.mp3');
+    });
   });
 
-  it('shows alert for invalid audio file', () => {
+  it('shows error for invalid audio file', async () => {
     (isValidAudioFile as any).mockReturnValue(false);
-    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
     
     render(<FileUpload {...defaultProps} />);
     
@@ -109,15 +122,21 @@ describe('FileUpload', () => {
     fireEvent.change(fileInput, { target: { files: [file] } });
     
     expect(isValidAudioFile).toHaveBeenCalledWith(file);
-    expect(alertSpy).toHaveBeenCalledWith('Please select a valid audio file.');
-    expect(URL.createObjectURL).not.toHaveBeenCalled();
     
-    alertSpy.mockRestore();
+    await waitFor(() => {
+      expect(screen.getByText('Please select a valid audio file.')).toBeDefined();
+    });
+    
+    expect(saveCustomAudio).not.toHaveBeenCalled();
   });
 
-  it('revokes previous blob URL when new file is selected', () => {
+  it('revokes previous blob URL when new file is selected', async () => {
     const onFileSelect = vi.fn();
     (isValidAudioFile as any).mockReturnValue(true);
+    (saveCustomAudio as any).mockResolvedValue({ 
+      success: true, 
+      dataUrl: 'data:audio/mpeg;base64,dGVzdA==' 
+    });
     
     render(
       <FileUpload 
@@ -133,6 +152,11 @@ describe('FileUpload', () => {
     fireEvent.change(fileInput, { target: { files: [file] } });
     
     expect(revokeFileUrl).toHaveBeenCalledWith('blob:previous-url');
+    
+    // Wait for async operation to complete
+    await waitFor(() => {
+      expect(onFileSelect).toHaveBeenCalled();
+    });
   });
 
   it('calls onFileSelect with empty values when clear is clicked', () => {
@@ -151,6 +175,7 @@ describe('FileUpload', () => {
     fireEvent.click(clearButton);
     
     expect(revokeFileUrl).toHaveBeenCalledWith('blob:test-url');
+    expect(clearCustomAudio).toHaveBeenCalled();
     expect(onFileSelect).toHaveBeenCalledWith('', '');
   });
 

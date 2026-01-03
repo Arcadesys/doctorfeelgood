@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Target from './components/Target';
 import Controls from './components/Controls';
 import { AppConfig } from './types';
-import { loadJSON, saveJSON } from './lib/storage';
+import { loadJSON, saveJSON, loadCustomAudio } from './lib/storage';
 import { useAudioEngine } from './hooks/useAudioEngine';
 
 const DEFAULTS: AppConfig = {
@@ -19,22 +19,42 @@ const DEFAULTS: AppConfig = {
   },
   audio: {
     mode: 'click',
-    volume: 0.8,
-    waveform: 'square',
+    volume: 0.15, // Start low per AGENTS.md (10-20%)
+    muted: false,
+    waveform: 'sine', // Softer waveform per AGENTS.md
+    pitch: 'medium',
+    panDepth: 1,
+    fadeInMs: 0,
   },
 };
 
 export default function App() {
   const [config, setConfig] = useState<AppConfig>(() => {
     const saved = loadJSON<AppConfig>();
-    if (!saved) return DEFAULTS;
-    // shallow migration for newly added fields
-    return {
-      ...DEFAULTS,
-      ...saved,
-      target: { ...DEFAULTS.target, ...saved.target },
-      audio: { ...DEFAULTS.audio, ...saved.audio },
-    };
+    const base = saved 
+      ? {
+          ...DEFAULTS,
+          ...saved,
+          target: { ...DEFAULTS.target, ...saved.target },
+          audio: { ...DEFAULTS.audio, ...saved.audio },
+        }
+      : DEFAULTS;
+    
+    // Restore custom audio from localStorage if mode is 'file'
+    if (base.audio.mode === 'file') {
+      const customAudio = loadCustomAudio();
+      if (customAudio) {
+        base.audio.fileUrl = customAudio.dataUrl;
+        base.audio.fileName = customAudio.fileName;
+      } else {
+        // No stored audio found, reset to default mode
+        base.audio.mode = 'click';
+        base.audio.fileUrl = undefined;
+        base.audio.fileName = undefined;
+      }
+    }
+    
+    return base;
   });
   const [playing, setPlaying] = useState(false);
   const [remaining, setRemaining] = useState(config.durationSec);
@@ -42,18 +62,43 @@ export default function App() {
   useEffect(() => saveJSON(config), [config]);
   useEffect(() => setRemaining(config.durationSec), [config.durationSec]);
 
+  // Muted overrides volume to 0
+  const effectiveVolume = config.audio.muted ? 0 : config.audio.volume;
+
   const audio = useAudioEngine(
     true, 
-    config.audio.volume, 
-    config.audio.waveform ?? 'square',
+    effectiveVolume, 
+    config.audio.waveform ?? 'sine',
     config.audio.mode,
-    config.audio.fileUrl
+    config.audio.fileUrl,
+    config.audio.pitch ?? 'medium',
+    config.audio.panDepth ?? 1,
+    config.audio.fadeInMs ?? 0
   );
 
   // Ensure audio engine suspends when not playing
   useEffect(() => {
     if (!playing) audio.stop();
   }, [playing, audio]);
+
+  // Panic stop hotkeys: Space toggles pause, Esc stops
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if user is typing in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+      
+      if (e.code === 'Space') {
+        e.preventDefault();
+        setPlaying(p => !p);
+      } else if (e.code === 'Escape') {
+        e.preventDefault();
+        setPlaying(false);
+        setRemaining(config.durationSec);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [config.durationSec]);
 
   useEffect(() => {
     let raf: number | null = null;
@@ -95,6 +140,7 @@ export default function App() {
           color={config.target.color}
           sizePx={config.target.sizePx}
           shape={config.target.shape ?? 'circle'}
+          emoji={config.target.emoji}
           rotate={config.target.rotate ?? false}
           speedPxPerSec={config.target.speedPxPerSec}
           edgePaddingPx={config.target.edgePaddingPx}

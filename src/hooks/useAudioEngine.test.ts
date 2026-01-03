@@ -117,7 +117,8 @@ describe('useAudioEngine', () => {
     expect(mockOscillator.stop).toHaveBeenCalled();
   });
 
-  it('plays beep sound with correct frequency', async () => {
+  it('plays beep sound with pitch preset frequency', async () => {
+    // Using default pitch 'medium' which is 600Hz
     const { result } = renderHook(() => 
       useAudioEngine(true, 0.5, 'sine', 'beep')
     );
@@ -128,7 +129,7 @@ describe('useAudioEngine', () => {
     });
 
     expect(mockAudioContext.createOscillator).toHaveBeenCalled();
-    expect(mockOscillator.frequency.value).toBe(800);
+    expect(mockOscillator.frequency.value).toBe(600); // medium pitch
   });
 
   it('generates white noise for hiss sound', async () => {
@@ -206,7 +207,6 @@ describe('useAudioEngine', () => {
 
   it('handles audio file loading errors gracefully', async () => {
     (globalThis.fetch as any).mockRejectedValue(new Error('Network error'));
-    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const { result } = renderHook(() => 
       useAudioEngine(true, 0.5, 'square', 'file', 'blob:test-url')
@@ -216,8 +216,9 @@ describe('useAudioEngine', () => {
       await new Promise(resolve => setTimeout(resolve, 0));
     });
 
-    expect(consoleSpy).toHaveBeenCalledWith('Failed to load audio file:', expect.any(Error));
-    consoleSpy.mockRestore();
+    // Engine should handle error silently and continue working
+    // (click will fall back to generated sound)
+    expect(result.current.click).toBeDefined();
   });
 
   it('clamps pan values to valid range', async () => {

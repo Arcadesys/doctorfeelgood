@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react';
+import type { PitchPreset } from '../types';
 
 interface AudioEngineAPI {
   start: () => void;
@@ -8,12 +9,21 @@ interface AudioEngineAPI {
   click: () => void; // short audible click
 }
 
+const PITCH_HZ: Record<PitchPreset, number> = {
+  low: 300,
+  medium: 600,
+  high: 950,
+};
+
 export function useAudioEngine(
   enabled: boolean, 
   volume: number, 
-  waveform: OscillatorType = 'square',
+  waveform: OscillatorType = 'sine',
   audioMode: 'click' | 'beep' | 'hiss' | 'chirp' | 'pulse' | 'file' = 'click',
-  fileUrl?: string
+  fileUrl?: string,
+  pitch: PitchPreset = 'medium',
+  panDepth: number = 1,
+  fadeInMs: number = 0
 ): AudioEngineAPI {
   const ctxRef = useRef<AudioContext | null>(null);
   const gainRef = useRef<GainNode | null>(null);
@@ -40,14 +50,12 @@ export function useAudioEngine(
       loadingRef.current = true;
 
       try {
-        console.log('Loading audio file:', fileUrl);
         const response = await fetch(fileUrl);
         if (!response.ok) {
           throw new Error(`Failed to fetch audio file: ${response.statusText}`);
         }
         
         const arrayBuffer = await response.arrayBuffer();
-        console.log('Audio file loaded, size:', arrayBuffer.byteLength, 'bytes');
         
         if (!ctxRef.current) {
           const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -56,11 +64,8 @@ export function useAudioEngine(
 
         const audioBuffer = await ctxRef.current.decodeAudioData(arrayBuffer);
         audioBufferRef.current = audioBuffer;
-        console.log('Audio file decoded successfully, duration:', audioBuffer.duration, 'seconds');
-      } catch (error) {
-        console.error('Failed to load audio file:', error);
+      } catch {
         audioBufferRef.current = null;
-        // You might want to show a user-friendly error message here
       } finally {
         loadingRef.current = false;
       }
@@ -90,7 +95,9 @@ export function useAudioEngine(
       start: () => { if (enabled) ensure(); },
       stop: () => { ctxRef.current?.suspend(); },
       setPan: (p: number) => {
-        const clamped = Math.max(-1, Math.min(1, p));
+        // Apply panDepth to scale the stereo spread
+        const scaled = p * Math.max(0, Math.min(1, panDepth));
+        const clamped = Math.max(-1, Math.min(1, scaled));
         if (!enabled) return;
         if (!panRef.current) return;
         panRef.current.pan.value = clamped;
@@ -107,42 +114,51 @@ export function useAudioEngine(
         const gain = gainRef.current;
         if (!ctx || !pan || !gain) return;
 
+        const fadeInSec = Math.max(0, fadeInMs) / 1000;
+        const baseFreq = PITCH_HZ[pitch] || PITCH_HZ.medium;
+
         const playGeneratedSound = () => {
           const now = ctx.currentTime;
           
           switch (audioMode) {
             case 'click': {
-              // Short tick sound
+              // Short tick sound using pitch preset
               const osc = ctx.createOscillator();
               const oscGain = ctx.createGain();
               osc.type = waveform;
-              osc.frequency.value = 950;
-              oscGain.gain.value = 0.5;
+              osc.frequency.value = baseFreq;
+              // Apply fade-in if configured
+              if (fadeInSec > 0) {
+                oscGain.gain.setValueAtTime(0, now);
+                oscGain.gain.linearRampToValueAtTime(0.5, now + Math.min(fadeInSec, 0.02));
+              } else {
+                oscGain.gain.value = 0.5;
+              }
               osc.connect(oscGain);
               oscGain.connect(pan);
               osc.start(now);
-              osc.stop(now + 0.03);
+              osc.stop(now + 0.03 + fadeInSec);
               break;
             }
             
             case 'beep': {
-              // Classic beep sound
+              // Classic beep sound using pitch preset
               const osc = ctx.createOscillator();
               const oscGain = ctx.createGain();
               osc.type = 'sine';
-              osc.frequency.value = 800;
+              osc.frequency.value = baseFreq;
               oscGain.gain.setValueAtTime(0, now);
-              oscGain.gain.linearRampToValueAtTime(0.3, now + 0.01);
-              oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+              oscGain.gain.linearRampToValueAtTime(0.3, now + Math.max(0.01, fadeInSec));
+              oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.15 + fadeInSec);
               osc.connect(oscGain);
               oscGain.connect(pan);
               osc.start(now);
-              osc.stop(now + 0.15);
+              osc.stop(now + 0.15 + fadeInSec);
               break;
             }
             
             case 'hiss': {
-              // White noise burst
+              // White noise burst with fade-in
               const bufferSize = ctx.sampleRate * 0.1; // 100ms
               const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
               const data = buffer.getChannelData(0);
@@ -153,11 +169,11 @@ export function useAudioEngine(
               const hissGain = ctx.createGain();
               const filter = ctx.createBiquadFilter();
               filter.type = 'highpass';
-              filter.frequency.value = 3000;
+              filter.frequency.value = baseFreq * 3; // Scale with pitch
               source.buffer = buffer;
               hissGain.gain.setValueAtTime(0, now);
-              hissGain.gain.linearRampToValueAtTime(0.4, now + 0.01);
-              hissGain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+              hissGain.gain.linearRampToValueAtTime(0.4, now + Math.max(0.01, fadeInSec));
+              hissGain.gain.exponentialRampToValueAtTime(0.001, now + 0.08 + fadeInSec);
               source.connect(filter);
               filter.connect(hissGain);
               hissGain.connect(pan);
@@ -166,31 +182,34 @@ export function useAudioEngine(
             }
             
             case 'chirp': {
-              // Frequency sweep
+              // Frequency sweep based on pitch preset
               const osc = ctx.createOscillator();
               const oscGain = ctx.createGain();
               osc.type = 'sine';
-              osc.frequency.setValueAtTime(200, now);
-              osc.frequency.exponentialRampToValueAtTime(1200, now + 0.12);
+              const startFreq = baseFreq * 0.3;
+              const endFreq = baseFreq * 2;
+              osc.frequency.setValueAtTime(startFreq, now);
+              osc.frequency.exponentialRampToValueAtTime(endFreq, now + 0.12 + fadeInSec);
               oscGain.gain.setValueAtTime(0, now);
-              oscGain.gain.linearRampToValueAtTime(0.25, now + 0.01);
-              oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+              oscGain.gain.linearRampToValueAtTime(0.25, now + Math.max(0.01, fadeInSec));
+              oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.12 + fadeInSec);
               osc.connect(oscGain);
               oscGain.connect(pan);
               osc.start(now);
-              osc.stop(now + 0.12);
+              osc.stop(now + 0.12 + fadeInSec);
               break;
             }
             
             case 'pulse': {
-              // Rhythmic pulse
+              // Rhythmic pulse using pitch preset
               const osc = ctx.createOscillator();
               const oscGain = ctx.createGain();
               osc.type = 'square';
-              osc.frequency.value = 150;
+              osc.frequency.value = baseFreq * 0.25;
               oscGain.gain.setValueAtTime(0, now);
-              // Create pulse pattern: on-off-on-off
-              oscGain.gain.linearRampToValueAtTime(0.3, now + 0.01);
+              // Create pulse pattern with fade-in
+              const attackTime = Math.max(0.01, fadeInSec);
+              oscGain.gain.linearRampToValueAtTime(0.3, now + attackTime);
               oscGain.gain.linearRampToValueAtTime(0.3, now + 0.05);
               oscGain.gain.linearRampToValueAtTime(0, now + 0.06);
               oscGain.gain.linearRampToValueAtTime(0, now + 0.08);
@@ -200,21 +219,27 @@ export function useAudioEngine(
               osc.connect(oscGain);
               oscGain.connect(pan);
               osc.start(now);
-              osc.stop(now + 0.2);
+              osc.stop(now + 0.2 + fadeInSec);
               break;
             }
             
-            default:
-              // Fallback to click
+            default: {
+              // Fallback to click using pitch
               const osc = ctx.createOscillator();
               const oscGain = ctx.createGain();
               osc.type = waveform;
-              osc.frequency.value = 950;
-              oscGain.gain.value = 0.5;
+              osc.frequency.value = baseFreq;
+              if (fadeInSec > 0) {
+                oscGain.gain.setValueAtTime(0, now);
+                oscGain.gain.linearRampToValueAtTime(0.5, now + Math.min(fadeInSec, 0.02));
+              } else {
+                oscGain.gain.value = 0.5;
+              }
               osc.connect(oscGain);
               oscGain.connect(pan);
               osc.start(now);
-              osc.stop(now + 0.03);
+              osc.stop(now + 0.03 + fadeInSec);
+            }
           }
         };
 
@@ -224,11 +249,8 @@ export function useAudioEngine(
             const source = ctx.createBufferSource();
             source.buffer = audioBufferRef.current;
             source.connect(pan);
-            const now = ctx.currentTime;
-            source.start(now);
-            console.log('Playing custom audio file');
-          } catch (error) {
-            console.error('Failed to play custom audio:', error);
+            source.start(ctx.currentTime);
+          } catch {
             // Fallback to generated click if custom audio fails
             playGeneratedSound();
           }
@@ -239,5 +261,5 @@ export function useAudioEngine(
       },
     };
     return api;
-  }, [enabled, volume, waveform, audioMode, fileUrl]);
+  }, [enabled, volume, waveform, audioMode, fileUrl, pitch, panDepth, fadeInMs]);
 }

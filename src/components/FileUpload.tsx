@@ -1,5 +1,6 @@
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { isValidAudioFile, revokeFileUrl } from '../lib/audioUtils';
+import { saveCustomAudio, clearCustomAudio } from '../lib/storage';
 
 type Props = {
   onFileSelect: (fileUrl: string, fileName: string) => void;
@@ -10,25 +11,37 @@ type Props = {
 
 export default function FileUpload({ onFileSelect, currentFileName, currentFileUrl, accept = "audio/*" }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleFileChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
     // Validate file type
     if (!isValidAudioFile(file)) {
-      alert('Please select a valid audio file.');
+      setError('Please select a valid audio file.');
       return;
     }
 
+    setIsLoading(true);
+    setError(null);
+
     // Revoke previous blob URL to prevent memory leaks
-    if (currentFileUrl) {
+    if (currentFileUrl && currentFileUrl.startsWith('blob:')) {
       revokeFileUrl(currentFileUrl);
     }
 
-    // Create a blob URL for the file
-    const fileUrl = URL.createObjectURL(file);
-    onFileSelect(fileUrl, file.name);
+    // Save to localStorage and get data URL
+    const result = await saveCustomAudio(file);
+    
+    setIsLoading(false);
+    
+    if (result.success && result.dataUrl) {
+      onFileSelect(result.dataUrl, file.name);
+    } else {
+      setError(result.error || 'Failed to save audio file');
+    }
   }, [onFileSelect, currentFileUrl]);
 
   const handleClick = useCallback(() => {
@@ -36,18 +49,21 @@ export default function FileUpload({ onFileSelect, currentFileName, currentFileU
   }, []);
 
   const handleClear = useCallback(() => {
-    // Revoke blob URL when clearing
-    if (currentFileUrl) {
+    // Revoke blob URL if it's a blob
+    if (currentFileUrl && currentFileUrl.startsWith('blob:')) {
       revokeFileUrl(currentFileUrl);
     }
+    // Clear from localStorage
+    clearCustomAudio();
     onFileSelect('', '');
+    setError(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
   }, [onFileSelect, currentFileUrl]);
 
   return (
-    <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+    <div className="row" style={{ gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
       <input
         ref={fileInputRef}
         type="file"
@@ -60,9 +76,10 @@ export default function FileUpload({ onFileSelect, currentFileName, currentFileU
         type="button"
         className="btn"
         onClick={handleClick}
+        disabled={isLoading}
         style={{ fontSize: '12px', padding: '4px 8px' }}
       >
-        {currentFileName ? 'Change' : 'Upload'} Audio
+        {isLoading ? 'Saving...' : currentFileName ? 'Change' : 'Upload'} Audio
       </button>
       {currentFileName && (
         <>
@@ -78,6 +95,11 @@ export default function FileUpload({ onFileSelect, currentFileName, currentFileU
             Clear
           </button>
         </>
+      )}
+      {error && (
+        <span style={{ fontSize: '11px', color: '#ff6b6b', width: '100%' }}>
+          {error}
+        </span>
       )}
     </div>
   );

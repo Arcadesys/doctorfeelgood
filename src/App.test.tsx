@@ -45,9 +45,9 @@ describe('App', () => {
     render(<App />);
     
     expect(screen.getByText('EMDR Processor · MVP')).toBeDefined();
-    expect(screen.getByLabelText('Play')).toBeDefined();
-    expect(screen.getByLabelText('Stop')).toBeDefined();
-    expect(screen.getByLabelText('Reset session')).toBeDefined();
+    expect(screen.getByLabelText(/Play/i)).toBeDefined();
+    expect(screen.getByLabelText(/Stop/i)).toBeDefined();
+    expect(screen.getByLabelText(/Reset/i)).toBeDefined();
     expect(screen.getByLabelText('Bilateral visual stage')).toBeDefined();
   });
 
@@ -86,7 +86,8 @@ describe('App', () => {
     
     // Should show default values
     expect(screen.getByDisplayValue('Click')).toBeDefined();
-    expect(screen.getByDisplayValue('0.8')).toBeDefined();
+    // Default volume is now 0.15 (15%) per AGENTS.md comfort guidelines
+    expect(screen.getByDisplayValue('0.15')).toBeDefined();
     // Use specific selector for time display
     const remainingTimeDisplay = screen.getByLabelText('Session controls')
       .querySelector('.time');
@@ -98,8 +99,9 @@ describe('App', () => {
     
     render(<App />);
     
-    // Change a configuration value
-    const volumeSlider = screen.getByDisplayValue('0.8');
+    // Change a configuration value - find volume slider by its label
+    const volumeLabel = screen.getByText('Volume').closest('label');
+    const volumeSlider = volumeLabel!.querySelector('input[type="range"]') as HTMLInputElement;
     fireEvent.change(volumeSlider, { target: { value: '0.6' } });
     
     // Should call saveJSON
@@ -123,13 +125,13 @@ describe('App', () => {
     render(<App />);
     
     // Start playing
-    const playButton = screen.getByLabelText('Play');
+    const playButton = screen.getByLabelText(/Play/i);
     fireEvent.click(playButton);
     
     expect(mockRaf).toHaveBeenCalled();
     
     // Stop playing
-    const stopButton = screen.getByLabelText('Stop');
+    const stopButton = screen.getByLabelText(/Stop/i);
     fireEvent.click(stopButton);
     
     expect(mockAudioEngine.stop).toHaveBeenCalled();
@@ -141,11 +143,11 @@ describe('App', () => {
     render(<App />);
     
     // Start playing to change the timer
-    const playButton = screen.getByLabelText('Play');
+    const playButton = screen.getByLabelText(/Play/i);
     fireEvent.click(playButton);
     
     // Reset
-    const resetButton = screen.getByLabelText('Reset session');
+    const resetButton = screen.getByLabelText(/Reset/i);
     fireEvent.click(resetButton);
     
     // Should show full duration again - use specific selector
@@ -169,7 +171,7 @@ describe('App', () => {
     render(<App />);
     
     // Start playing to trigger animation
-    const playButton = screen.getByLabelText('Play');
+    const playButton = screen.getByLabelText(/Play/i);
     fireEvent.click(playButton);
     
     expect(mockRaf).toHaveBeenCalled();
@@ -177,10 +179,13 @@ describe('App', () => {
     // The audio engine should be initialized with correct parameters
     expect(useAudioEngine).toHaveBeenCalledWith(
       true,
-      0.8, // default volume
-      'square', // default waveform
+      0.15, // default volume (lowered per AGENTS.md)
+      'sine', // default waveform (softer per AGENTS.md)
       'click', // default mode
-      undefined // no file URL
+      undefined, // no file URL
+      'medium', // default pitch
+      1, // default pan depth
+      0 // default fade-in
     );
   });
 
@@ -211,7 +216,7 @@ describe('App', () => {
       audio: {
         mode: 'click',
         volume: 0.7,
-        // Missing: waveform
+        // Missing: waveform, muted, pitch, etc.
       },
     };
     
@@ -221,7 +226,8 @@ describe('App', () => {
     
     // Should use defaults for missing fields
     expect(screen.getByDisplayValue('Circle')).toBeDefined(); // default shape
-    expect(screen.getByDisplayValue('Square')).toBeDefined(); // default waveform
+    // Waveform selector shows "Sine (soft)" as default now
+    expect(screen.getByDisplayValue('Sine (soft)')).toBeDefined(); // default waveform
   });
 
   it('displays correct time format for different durations', () => {

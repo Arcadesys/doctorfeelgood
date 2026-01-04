@@ -395,12 +395,12 @@ describe('Controls', () => {
     });
 
     it('shows waveform selector only for click mode', () => {
-      renderControls({ config: { audio: { mode: 'click', volume: 0.8, waveform: 'square' } } });
+      renderControls({ config: { audio: { mode: 'click', volume: 0.8, muted: false, waveform: 'square' } } });
       expect(screen.getByText('Waveform')).toBeDefined();
     });
 
     it('hides waveform selector for non-click modes', () => {
-      renderControls({ config: { audio: { mode: 'beep', volume: 0.8 } } });
+      renderControls({ config: { audio: { mode: 'beep', volume: 0.8, muted: false } } });
       expect(screen.queryByText('Waveform')).toBeNull();
     });
 
@@ -408,7 +408,7 @@ describe('Controls', () => {
       const onConfigChange = vi.fn();
       renderControls({ 
         onConfigChange,
-        config: { audio: { mode: 'click', volume: 0.8, waveform: 'square' } }
+        config: { audio: { mode: 'click', volume: 0.8, muted: false, waveform: 'square' } }
       });
       
       const waveformSelect = screen.getByDisplayValue('Square');
@@ -422,13 +422,13 @@ describe('Controls', () => {
     });
 
     it('shows file upload when audio mode is file', () => {
-      renderControls({ config: { audio: { mode: 'file', volume: 0.8 } } });
+      renderControls({ config: { audio: { mode: 'file', volume: 0.8, muted: false } } });
       expect(screen.getByText('Sound file')).toBeDefined();
       expect(screen.getByText(/Upload/)).toBeDefined();
     });
 
     it('hides file upload when audio mode is not file', () => {
-      renderControls({ config: { audio: { mode: 'click', volume: 0.8, waveform: 'square' } } });
+      renderControls({ config: { audio: { mode: 'click', volume: 0.8, muted: false, waveform: 'square' } } });
       expect(screen.queryByText('Sound file')).toBeNull();
     });
   });

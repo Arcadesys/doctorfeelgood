@@ -43,3 +43,4 @@ next-env.d.ts
 # Audio files
 /Outer Wilds.m4a
 /public/Outer Wilds.m4a
+.env*.local

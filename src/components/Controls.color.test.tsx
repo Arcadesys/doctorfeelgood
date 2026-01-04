@@ -32,7 +32,7 @@ function renderControls(partial?: { target?: Partial<AppConfig['target']>; audio
       edgePauseMs: 0,
       startPosition: 'center',
     },
-    audio: { mode: 'click', volume: 0.8, waveform: 'square' },
+    audio: { mode: 'click', volume: 0.8, muted: false, waveform: 'square' },
   };
   const config: AppConfig = {
     ...base,
@@ -69,7 +69,7 @@ function ControlsTargetIntegration({ initialConfig }: { initialConfig?: { target
       edgePauseMs: 0,
       startPosition: 'center',
     },
-    audio: { mode: 'click', volume: 0.8, waveform: 'square' },
+    audio: { mode: 'click', volume: 0.8, muted: false, waveform: 'square' },
   };
   
   const [config, setConfig] = useState<AppConfig>({
